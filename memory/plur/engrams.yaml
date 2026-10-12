@@ -50,7 +50,7 @@ engrams:
     polarity: null
     commitment: locked
     write_count: 1
-    injection_count: 1
+    injection_count: 2
     sources: []
     recurrence_count: 0
     engram_version: 1
@@ -110,7 +110,7 @@ engrams:
     polarity: null
     commitment: leaning
     write_count: 1
-    injection_count: 1
+    injection_count: 2
     sources: []
     recurrence_count: 0
     engram_version: 1
@@ -169,7 +169,7 @@ engrams:
     polarity: null
     commitment: leaning
     write_count: 1
-    injection_count: 1
+    injection_count: 2
     sources: []
     recurrence_count: 0
     engram_version: 1
@@ -229,7 +229,7 @@ engrams:
     polarity: null
     commitment: locked
     write_count: 1
-    injection_count: 1
+    injection_count: 2
     sources: []
     recurrence_count: 0
     engram_version: 1
@@ -286,7 +286,7 @@ engrams:
     polarity: null
     commitment: leaning
     write_count: 1
-    injection_count: 1
+    injection_count: 2
     sources: []
     recurrence_count: 0
     engram_version: 1
