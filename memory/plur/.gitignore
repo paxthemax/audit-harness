@@ -1,0 +1,10 @@
+# Retain portable starter data and observational history.
+# Runtime caches, credentials, trust maps, locks, and unknown files stay local.
+*
+!.gitignore
+!README.md
+!config.yaml
+!engrams.yaml
+!episodes.yaml
+!history/
+!history/**

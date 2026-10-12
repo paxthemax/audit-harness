@@ -1,0 +1,11 @@
+[tools]
+node = "25.2.0"
+# PLUR memory engine (store: memory/plur/). Verified against github.com/plur-ai/plur;
+# below mise's download-count threshold, so explicitly allowed.
+"npm:@plur-ai/cli" = { version = "0.21.5", allow_low_downloads = true }
+"npm:@plur-ai/mcp" = { version = "0.21.5", allow_low_downloads = true }
+
+[env]
+# Isolated repo-local store; disable discovery of other stores.
+PLUR_PATH = "{{config_root}}/memory/plur"
+PLUR_AUTO_DISCOVER = "0"

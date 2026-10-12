@@ -1,0 +1,294 @@
+engrams:
+  - id: ENG-FW-2026-1012-001
+    version: 2
+    status: active
+    consolidated: false
+    type: architectural
+    scope: project:framework
+    visibility: private
+    statement: >-
+      This repository implements the audit harness framework. Its design specification lives in the separate design lab
+      at ../framework-design-lab/; read the relevant design and decision records there before implementing a mechanism.
+    rationale: The repository README names the design lab as the design spec.
+    source: README.md
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    domain: framework.scope
+    tags:
+      - scope
+      - design-spec
+      - implementation
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 0
+      last_accessed: "2026-10-12"
+    associations: []
+    knowledge_anchors:
+      - path: README.md
+        relevance: primary
+      - path: ../framework-design-lab/README.md
+        relevance: supporting
+    claim_class: documented
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    temporal:
+      learned_at: "2026-10-12"
+    structured_data:
+      framework:
+        record_ids: []
+        review_status: reviewed
+        authority: repository-instruction
+        approved_by: operator
+        approved_on: "2026-10-12"
+        stale_if:
+          - The README stops naming the design lab as the design spec.
+    polarity: null
+    commitment: locked
+    write_count: 1
+    injection_count: 1
+    sources: []
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    pinned: true
+  - id: ENG-FW-2026-1012-002
+    version: 2
+    status: active
+    consolidated: false
+    type: behavioral
+    scope: project:framework
+    visibility: private
+    statement: >-
+      Treat the design lab's accepted baseline (DEC-009) as the starting point. A consequential change to a specified
+      mechanism needs an operator decision. Numeric limits and the choice of store, runner, model provider, sandbox and
+      agent host remain proposals; surface them to the operator rather than presenting them as decided.
+    rationale: The design glossary defines the accepted baseline and what it leaves open.
+    source: "../framework-design-lab/design/harness-glossary.md: Accepted baseline"
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    domain: framework.decisions
+    tags:
+      - accepted-baseline
+      - operator-authority
+      - proposals
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 0
+      last_accessed: "2026-10-12"
+    associations: []
+    knowledge_anchors:
+      - path: ../framework-design-lab/design/harness-glossary.md
+        relevance: primary
+      - path: ../framework-design-lab/decisions/DEC-002-harness-operating-envelope.md
+        relevance: supporting
+    claim_class: documented
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    temporal:
+      learned_at: "2026-10-12"
+    structured_data:
+      framework:
+        record_ids:
+          - DEC-009
+          - DEC-002
+        review_status: unreviewed
+        authority: design-lab-record
+        approved_by: null
+        approved_on: null
+        stale_if:
+          - A design lab decision supersedes DEC-009 or changes the open choices.
+    polarity: null
+    commitment: leaning
+    write_count: 1
+    injection_count: 1
+    sources: []
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    pinned: false
+  - id: ENG-FW-2026-1012-003
+    version: 2
+    status: active
+    consolidated: false
+    type: architectural
+    scope: project:framework
+    visibility: private
+    statement: >-
+      This PLUR store is development memory for building the harness. It is not the harness's operational, engagement,
+      or evidence store, and it must not hold client audit data. The design does not make PLUR the harness's
+      authoritative store; PLUR is at most a proposed per-engagement recall adapter.
+    rationale: The state design separates harness operational memory from development memory.
+    source: ../framework-design-lab/design/harness-state-and-execution.md
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    domain: framework.memory
+    tags:
+      - isolation
+      - engagement-data
+      - plur
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 0
+      last_accessed: "2026-10-12"
+    associations: []
+    knowledge_anchors:
+      - path: ../framework-design-lab/design/harness-state-and-execution.md
+        relevance: primary
+      - path: ../framework-design-lab/design/harness-comprehension-method.md
+        relevance: supporting
+    claim_class: documented
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    temporal:
+      learned_at: "2026-10-12"
+    structured_data:
+      framework:
+        record_ids:
+          - DEC-001
+        review_status: unreviewed
+        authority: design-lab-record
+        approved_by: null
+        approved_on: null
+        stale_if:
+          - The design lab adopts PLUR as a harness store or changes engagement isolation.
+    polarity: null
+    commitment: leaning
+    write_count: 1
+    injection_count: 1
+    sources: []
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    pinned: false
+  - id: ENG-FW-2026-1012-004
+    version: 2
+    status: active
+    consolidated: false
+    type: procedural
+    scope: project:framework
+    visibility: private
+    statement: >-
+      Keep this repository's memory in the isolated repo-local store memory/plur/, opened through PLUR_PATH with
+      PLUR_AUTO_DISCOVER=0 and no secondary stores or sync. Learn automatically and review or correct memories
+      periodically. Use keyword retrieval; add embeddings only when retrieval misses justify them.
+    rationale: The operator chose the design lab's DEC-001 memory policy for this repository.
+    source: "Operator selection 2026-10-12: repo-local PLUR store like the design lab"
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    domain: framework.memory
+    tags:
+      - plur
+      - isolation
+      - automatic-learning
+      - keyword-retrieval
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 0
+      last_accessed: "2026-10-12"
+    associations: []
+    knowledge_anchors:
+      - path: memory/plur/README.md
+        relevance: primary
+      - path: ../framework-design-lab/decisions/DEC-001-knowledge-and-memory.md
+        relevance: supporting
+    claim_class: documented
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    temporal:
+      learned_at: "2026-10-12"
+    structured_data:
+      framework:
+        record_ids:
+          - DEC-001
+        review_status: reviewed
+        authority: explicit-operator-instruction
+        approved_by: operator
+        approved_on: "2026-10-12"
+        stale_if:
+          - The operator changes the store placement, learning policy, or retrieval mode.
+    polarity: null
+    commitment: locked
+    write_count: 1
+    injection_count: 1
+    sources: []
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    pinned: true
+  - id: ENG-FW-2026-1012-005
+    version: 2
+    status: active
+    consolidated: false
+    type: procedural
+    scope: project:framework
+    visibility: private
+    statement: >-
+      Manage required tools through mise.toml. PLUR CLI and MCP are pinned to 0.21.5 with allow_low_downloads after
+      checking the packages against github.com/plur-ai/plur; recheck provenance and schema before changing the pin.
+    rationale: The design lab uses mise for internal tools; mise blocked PLUR on its download threshold.
+    source: mise.toml
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    domain: framework.tooling
+    tags:
+      - mise
+      - plur
+      - supply-chain
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 0
+      last_accessed: "2026-10-12"
+    associations: []
+    knowledge_anchors:
+      - path: mise.toml
+        relevance: primary
+      - path: ../framework-design-lab/research/plur-assessment.md
+        relevance: supporting
+    claim_class: documented
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    temporal:
+      learned_at: "2026-10-12"
+    structured_data:
+      framework:
+        record_ids: []
+        review_status: unreviewed
+        authority: agent-observation
+        approved_by: null
+        approved_on: null
+        stale_if:
+          - The PLUR pin or mise download policy changes.
+    polarity: null
+    commitment: leaning
+    write_count: 1
+    injection_count: 1
+    sources: []
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    pinned: false

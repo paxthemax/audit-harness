@@ -1,0 +1,19 @@
+# Repo-local isolated store following the design lab's DEC-001 policy,
+# selected for this repository on 2026-10-12. PLUR 0.21.5 (pinned in mise.toml).
+# These settings do not prevent explicit writes or host-specific behavior.
+backend: yaml
+index: false
+embeddings:
+  enabled: false
+auto_learn: true
+auto_capture: true
+auto_route_scope: false
+unscoped_default: local
+stores: []
+allow_secrets: false
+decay_enabled: true
+injection_budget: 2000
+recurrence:
+  max_commitment: decided
+profile:
+  enabled: false

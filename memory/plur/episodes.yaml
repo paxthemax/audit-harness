@@ -1,0 +1,14 @@
+# Events that actually occurred; source paths in summaries.
+- id: EP-FW-2026-1012-001
+  timestamp: '2026-10-12T14:05:00Z'
+  agent: claude-code
+  channel: framework-session
+  session_id: framework-plur-setup-2026-10-12
+  tags: [plur, setup, operator-decision]
+  summary: >-
+    Instantiated the PLUR store for this repository. The operator chose a
+    repo-local isolated store following the design lab's DEC-001 policy over
+    the global `plur init` (~/.plur). PLUR CLI/MCP 0.21.5 are pinned in
+    mise.toml; PLUR_PATH and PLUR_AUTO_DISCOVER=0 are set in its [env]; .mcp.json
+    starts plur-mcp through mise. Seeded five engrams. See memory/plur/README.md.
+    This timestamp records capture, not the exact time of the decision.
