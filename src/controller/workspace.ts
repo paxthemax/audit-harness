@@ -1,8 +1,9 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fail } from '../core/errors.ts';
 import { randomToken, sha256Hex } from '../core/hash.ts';
 import { timingSafeEqual } from 'node:crypto';
+import { withLock } from '../store/lock.ts';
 import { RecordStore } from '../store/recordStore.ts';
 
 // A workspace holds every engagement store, the mechanism library store, the controller's secrets
@@ -94,15 +95,19 @@ export class Workspace {
   }
 
   /** Open (or reopen when another process committed) the store for a scope. */
-  store(scope: string, fresh = false): RecordStore {
+  store(scope: string, fresh = false, force = false): RecordStore {
     const dir = scope === 'library' ? join(this.root, 'library') : this.engagementDir(scope);
     const cached = this.stores.get(scope);
     if (cached && !fresh) return cached;
-    if (cached && fresh && headOf(dir) === cached.lastCommitSeen) return cached;
-    const s = RecordStore.open(dir, scope);
-    s.lastCommitSeen = headOf(dir);
-    this.stores.set(scope, s);
-    return s;
+    if (cached && fresh && !force && headOf(dir) === cached.lastCommitSeen) return cached;
+    // Opening runs crash recovery (quarantining uncommitted files), so it must never overlap another
+    // process's commit: hold the controller lock while (re)loading.
+    return withLock(this.lockPath, () => {
+      const s = RecordStore.open(dir, scope);
+      s.lastCommitSeen = headOf(dir);
+      this.stores.set(scope, s);
+      return s;
+    });
   }
 
   createEngagementStore(id: string): RecordStore {
@@ -112,6 +117,15 @@ export class Workspace {
     s.lastCommitSeen = headOf(dir);
     this.stores.set(id, s);
     return s;
+  }
+
+  /** Remove an engagement store that holds no committed records yet (a refused create_engagement). */
+  discardNewEngagementStore(id: string): void {
+    const dir = this.engagementDir(id);
+    const s = RecordStore.exists(dir) ? RecordStore.open(dir, id) : null;
+    if (s && (s.heads().length || s.events().length)) return; // never discard acknowledged state
+    this.stores.delete(id);
+    rmSync(dir, { recursive: true, force: true });
   }
 
   noteCommitted(scope: string): void {

@@ -52,11 +52,22 @@ export interface ReadRecordsPayload {
   limit?: number;
 }
 
-/** Records a worker may read: its engagement only, never secrets, decisions' screen metadata is fine. */
+/**
+ * Records a worker may read: its own engagement only (the controller refuses other scopes). A
+ * challenger's reads honor its initial context: no author narrative (review packets, author positions,
+ * agent interpretations) and no provisional statements on the challenged path
+ * (design/audit-harness.md, "Agent role classification").
+ */
 function workerVisible(ctx: OpContext, env: RecordEnvelope): boolean {
   if (ctx.principal.channel !== 'worker') return true;
   // Library entries are reached through the context builder, not engagement reads.
-  return env.visibility === 'engagement';
+  if (env.visibility !== 'engagement') return false;
+  if (ctx.principal.grant?.role === 'challenger') {
+    if (env.type === 'review_packet' || env.type === 'interpretation') return false;
+    if (env.type === 'position' && (env as RecordEnvelope<'position'>).body.role === 'author') return false;
+    if (env.type === 'system_statement' && (env as RecordEnvelope<'system_statement'>).body.review_status !== 'reviewed') return false;
+  }
+  return true;
 }
 
 defineOperation<ReadRecordsPayload>({
@@ -95,6 +106,7 @@ defineOperation<RecordDisplayPayload>({
   name: 'record_display',
   channels: ['screen', 'auditor'],
   mutating: true,
+  scope: 'either',
   handler(ctx, p) {
     if (!Array.isArray(p?.rendered) || !Array.isArray(p.sections)) fail('invalid_request', 'rendered and sections are required');
     for (const r of p.rendered) ctx.store.get(r); // exact revisions must exist
@@ -116,12 +128,34 @@ defineOperation<RecordDisplayPayload>({
       },
       p.rendered,
     );
-    for (const u of presented) {
-      const unit = ctx.tx.current(u.record_id, 'audit_unit');
-      if (unit.body.first_presentation === null) {
-        ctx.tx.revise(u.record_id, 'audit_unit', (b) => ({ ...b, first_presentation: { at: ctx.now, receipt } }));
+    // The unit's first presentation is derived from these receipts (see firstPresentation in
+    // src/decision/common.ts) rather than stored on the unit, so presenting a unit never makes a
+    // decision about that unit stale.
+    for (const u of presented) ctx.store.get(u, 'audit_unit');
+    return { display_receipt: receipt, channel: ctx.principal.channel };
+  },
+});
+
+/**
+ * Verify a store before resuming (design/harness-state-and-execution.md, "Permissions and isolation":
+ * restore into an isolated location and verify references and hashes before resuming).
+ */
+defineOperation<Record<string, never>>({
+  name: 'verify_store',
+  channels: ['auditor', 'screen', 'controller'],
+  mutating: false,
+  scope: 'either',
+  handler(ctx) {
+    const v = ctx.store.verify();
+    const dangling: string[] = [];
+    for (const env of ctx.store.heads()) {
+      for (const d of env.depends_on) {
+        if ('artifact' in d) {
+          if (!ctx.archive.has(d.artifact)) dangling.push(`${env.record_id} -> ${d.artifact}`);
+        } else if (!d.scope && !ctx.store.tryGet(d)) dangling.push(`${env.record_id} -> ${d.record_id}@${d.revision}`);
       }
     }
-    return { display_receipt: receipt, channel: ctx.principal.channel };
+    const unresolved = ctx.store.heads('attempt').filter((a) => a.body.status === 'running' || a.body.status === 'outcome_unknown').map((a) => a.record_id);
+    return { ok: v.ok && dangling.length === 0, problems: [...v.problems, ...dangling.map((d) => `dangling reference ${d}`)], unresolved_attempts: unresolved, quarantined: ctx.store.openReport.quarantined };
   },
 });

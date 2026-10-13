@@ -122,7 +122,34 @@ export class RecordStore {
   // ------------------------------------------------------------------------------------------
   // Recovery and loading
 
+  /**
+   * Quarantine uncommitted record/event files left by a crashed commit (caller holds the controller
+   * lock). Returns true when anything was moved, so the caller reloads its view.
+   */
+  recoverIfDirty(): boolean {
+    this.removeStaleGitLocks();
+    const status = git(this.dir, ['status', '--porcelain=v1', '-uall', '--', 'records', 'events', 'store.json']);
+    if (!status.trim()) return false;
+    this.recoverUncommitted();
+    return true;
+  }
+
+  /**
+   * Git lock files can only be stale here: every Git operation on a store runs under the controller
+   * lock, which the caller holds. A leftover lock from a crashed process would otherwise block every
+   * write, including recording a pause.
+   */
+  private removeStaleGitLocks(): void {
+    for (const rel of ['index.lock', 'HEAD.lock', 'refs/heads/main.lock', 'packed-refs.lock']) {
+      rmSync(join(this.dir, '.git', rel), { force: true });
+    }
+  }
+
   private recoverUncommitted(): void {
+    this.removeStaleGitLocks();
+    // Unstage first: a crash between `git add` and `git commit` leaves files in the index, and
+    // restoring from the index would resurrect them. Only HEAD is acknowledged.
+    git(this.dir, ['reset', '-q']);
     const status = git(this.dir, ['status', '--porcelain=v1', '-uall', '--', 'records', 'events', 'store.json']);
     const paths = status
       .split('\n')
@@ -139,8 +166,8 @@ export class RecordStore {
       }
       // Restore anything a crash may have modified in place (records are append-only, so this only
       // undoes damage, never acknowledged history).
-      git(this.dir, ['checkout', '--', '.']);
-      this.openReport.quarantined = paths;
+      git(this.dir, ['checkout', 'HEAD', '--', '.']);
+      this.openReport.quarantined = [...this.openReport.quarantined, ...paths];
     }
     const archiveStatus = git(this.dir, ['status', '--porcelain=v1', '-uall', '--', 'archive/sha256']);
     this.openReport.orphaned_blobs = archiveStatus.split('\n').filter((l) => l.startsWith('??')).length;
@@ -279,6 +306,7 @@ export class RecordStore {
   commit(input: CommitInput): CommitResult {
     if (this.corrupt) fail('store_corrupt', `store ${this.scope} is corrupt (${this.corrupt}); writes refused`);
     const written: string[] = [];
+    let committed = false;
     const newEnvs: RecordEnvelope[] = [];
     const pendingHeads = new Map<string, number>();
     const pendingSeq = new Map<string, number>();
@@ -352,8 +380,10 @@ export class RecordStore {
         written.push(rel);
       }
       const blobs = (input.blobs ?? []).map((d) => this.archive.pathOf(d).slice(this.dir.length + 1));
+      this.removeStaleGitLocks();
       git(this.dir, ['add', '--', ...written, ...blobs]);
       git(this.dir, ['commit', '-q', '-m', input.message]);
+      committed = true;
       const commit = git(this.dir, ['rev-parse', 'HEAD']).trim();
       for (const env of newEnvs) {
         const revs = this.revisions.get(env.record_id) ?? [];
@@ -364,6 +394,10 @@ export class RecordStore {
       this.eventList.push(...evs);
       return { refs: newEnvs.map((n) => ({ record_id: n.record_id, revision: n.revision })), events: evs, commit };
     } catch (e) {
+      if (committed) {
+        // The commit landed; only bookkeeping after it failed. Never roll back acknowledged files.
+        throw new HarnessError('execution_failed', `committed, but reloading state failed: ${(e as Error).message}; reopen the store`, { committed: true });
+      }
       // Nothing was acknowledged: remove files of this attempt and unstage them.
       for (const rel of written) rmSync(join(this.dir, rel), { force: true });
       try {

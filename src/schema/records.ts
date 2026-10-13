@@ -424,6 +424,7 @@ export interface AuditUnitBody {
   functions: { name: string; reviewed: boolean }[];
   reviewed_revision: { snapshot: Ref; decision: Ref } | null;
   review_status: V.AuditUnitReviewStatus;
+  /** Always null in stored records: derived from display receipts by `firstPresentation()`. */
   first_presentation: { at: string; receipt: Ref } | null;
   evidence: AnyRef[];
   gaps: string[];
@@ -656,6 +657,7 @@ export type JobPurpose =
   | 'experiment'
   | 'replay'
   | 'positive_control'
+  | 'adequacy'
   | 'probe'
   | 'agent';
 export interface JobBody {
@@ -685,7 +687,7 @@ const jobSchema = obj({
   authorization: refSchema,
   context_manifest: nullable(artifactRefSchema),
   role: text(),
-  purpose: oneOfValues(['build', 'baseline_tests', 'inventory', 'experiment', 'replay', 'positive_control', 'probe', 'agent']),
+  purpose: oneOfValues(['build', 'baseline_tests', 'inventory', 'experiment', 'replay', 'positive_control', 'adequacy', 'probe', 'agent']),
   adapter: obj({ name: text(), version: text(), descriptor: text() }),
   operation: text(),
   args: openObj('adapter-specific structured arguments'),
@@ -774,6 +776,8 @@ export interface StructuredResult {
   /** The runner's mechanical interpretation (e.g. which test asserted what); not semantic truth. */
   interpretation: string;
   tests: { name: string; status: 'passed' | 'failed' | 'skipped'; reason: string | null; expect: 'violation' | 'no_violation' | null }[];
+  /** Property campaigns (fuzz/invariant): actions attempted and reverted, and the counterexample sequence. */
+  campaign?: { runs: number; calls: number; reverts: number; counterexample: string[] | null; all_actions_reverted: boolean; never_succeeded?: string[] } | null;
 }
 const structuredResultSchema = obj({
   result_type: oneOfValues(V.TOOL_RESULT_TYPES),
@@ -787,6 +791,9 @@ const structuredResultSchema = obj({
       reason: nullable(str()),
       expect: nullable(oneOfValues(['violation', 'no_violation'])),
     }),
+  ),
+  'campaign?': nullable(
+    obj({ runs: int(0), calls: int(0), reverts: int(0), counterexample: nullable(strings), all_actions_reverted: bool(), 'never_succeeded?': strings }),
   ),
 });
 
@@ -835,6 +842,10 @@ export interface DependencyProbeBody {
   cannot_observe: string[];
   conclusion: Ref | null;
   job: Ref | null;
+  /** Evaluation the conclusion was established (or last reaffirmed) against; freshness compares to it. */
+  baseline?: { snapshot: Ref; digest: string | null };
+  /** Set when a newer probe replaces this one; a superseded probe no longer decides freshness. */
+  superseded_by?: Ref | null;
 }
 const probeSchema = obj({
   kind: oneOfValues(V.PROBE_KINDS),
@@ -846,6 +857,8 @@ const probeSchema = obj({
   cannot_observe: strings,
   conclusion: nullable(refSchema),
   job: nullable(refSchema),
+  'baseline?': obj({ snapshot: refSchema, digest: nullable(str()) }),
+  'superseded_by?': nullable(refSchema),
 });
 
 export interface CapturedInputBody {
@@ -892,6 +905,8 @@ export interface ReviewPacketBody {
   inbound_link_digest: string;
   evidence_watermark: number;
   dependency_digest: string;
+  /** Target files that experiment fixtures override (fixtures never alter the target invisibly). */
+  fixture_overrides?: { job: Ref; paths: string[] }[];
 }
 const packetSchema = obj({
   investigation: refSchema,
@@ -926,6 +941,7 @@ const packetSchema = obj({
   inbound_link_digest: text(),
   evidence_watermark: int(0),
   dependency_digest: text(),
+  'fixture_overrides?': arr(obj({ job: refSchema, paths: strings })),
 });
 
 export interface DisplayReceiptBody {
@@ -1053,6 +1069,8 @@ export interface ConclusionFreshnessBody {
   unobserved: string[];
   attestation: Ref | null;
   decision: Ref | null;
+  /** Why the value was assigned (changed probes, unevaluable probes, the triggering change). */
+  reasons?: string[];
 }
 const freshnessSchema = obj({
   conclusion: refSchema,
@@ -1070,6 +1088,7 @@ const freshnessSchema = obj({
   unobserved: strings,
   attestation: nullable(refSchema),
   decision: nullable(refSchema),
+  'reasons?': strings,
 });
 
 export interface ReportManifestBody {
@@ -1289,6 +1308,245 @@ const workProposalSchema = obj({
   gaps: strings,
 });
 
+
+// ---------------------------------------------------------------------------------------------
+// Comprehension, coverage and improvement records (FR-14, FR-26, FR-28, FR-30, FR-31, FR-37)
+
+export interface KbDiagramBody {
+  audit_unit: Ref;
+  lens: string;
+  affiliation: 'designed' | 'implemented' | 'comparison';
+  format: 'mermaid';
+  source: ArtifactRef;
+  /** The statements (states, transitions) the diagram depicts, at exact revisions. */
+  statements: Ref[];
+  /** Semantic delta against the previous revision when regenerated; grants no re-review. */
+  semantic_delta: { added: string[]; removed: string[]; changed: string[] } | null;
+  review_status: 'provisional' | 'reviewed';
+}
+const kbDiagramSchema = obj({
+  audit_unit: refSchema,
+  lens: text(),
+  affiliation: oneOfValues(['designed', 'implemented', 'comparison']),
+  format: { const: 'mermaid' },
+  source: artifactRefSchema,
+  statements: refs,
+  semantic_delta: nullable(obj({ added: strings, removed: strings, changed: strings })),
+  review_status: oneOfValues(['provisional', 'reviewed']),
+});
+
+export interface ExplorationBody {
+  audit_units: Ref[];
+  lens: 'purpose' | 'flows' | 'stores' | 'transitions';
+  authorization: Ref;
+  mode: 'connected_walkthrough';
+  rounds: { started_at: string; ended_at: string | null; seen: Ref[] }[];
+  /** Optional checkpoints: a skipped checkpoint records neither mastery nor failure. */
+  checkpoints: { id: string; prompt: string; status: 'offered' | 'skipped' | 'answered'; captured_input: Ref | null }[];
+  status: 'active' | 'paused' | 'completed';
+}
+const explorationSchema = obj({
+  audit_units: arr(refSchema, 1),
+  lens: oneOfValues(['purpose', 'flows', 'stores', 'transitions']),
+  authorization: refSchema,
+  mode: { const: 'connected_walkthrough' },
+  rounds: arr(obj({ started_at: isoTime, ended_at: nullable(isoTime), seen: refs })),
+  checkpoints: arr(
+    obj({
+      id: text(),
+      prompt: text(),
+      status: oneOfValues(['offered', 'skipped', 'answered']),
+      captured_input: nullable(refSchema),
+    }),
+  ),
+  status: oneOfValues(['active', 'paused', 'completed']),
+});
+
+export interface AccountingViewBody {
+  audit_unit: Ref;
+  conservation: { relation: string; anchors: Anchor[] }[];
+  units: { store: string; unit: string; decimals: number | null }[];
+  rounding: { operation: string; anchor: Anchor | null; direction: 'up' | 'down' | 'nearest' | 'unknown'; beneficiary: string }[];
+  review_status: 'provisional' | 'reviewed';
+}
+const accountingViewSchema = obj({
+  audit_unit: refSchema,
+  conservation: arr(obj({ relation: text(), anchors: arr(anchorSchema) })),
+  units: arr(obj({ store: text(), unit: text(), decimals: nullable(int(0)) })),
+  rounding: arr(
+    obj({
+      operation: text(),
+      anchor: nullable(anchorSchema),
+      direction: oneOfValues(['up', 'down', 'nearest', 'unknown']),
+      beneficiary: text(),
+    }),
+  ),
+  review_status: oneOfValues(['provisional', 'reviewed']),
+});
+
+export interface ControlItemBody {
+  control_id: string;
+  title: string;
+  source: string;
+  applicability: 'applicable' | 'not_applicable' | 'unknown';
+  applicability_reason: string | null;
+  evidence: AnyRef[];
+  exclusions: string[];
+  gaps: string[];
+}
+const controlItemSchema = obj({
+  control_id: text(),
+  title: text(),
+  source: text(),
+  applicability: oneOfValues(['applicable', 'not_applicable', 'unknown']),
+  applicability_reason: nullable(str()),
+  evidence: anyRefs,
+  exclusions: strings,
+  gaps: strings,
+});
+
+export interface LeadGroupBody {
+  relation: 'duplicate' | 'shared_cause' | 'chain';
+  members: Ref[];
+  /** Every member's origin is preserved; consolidation never deletes a lead. */
+  origins: { member: Ref; origin: string; lead_generator: string }[];
+  proposed_cause: string;
+  dissent: string[];
+  /** For a chain: the separate investigable claim created for it. */
+  chain_investigation: Ref | null;
+  status: 'proposed' | 'confirmed' | 'dissolved';
+  status_reason: string | null;
+}
+const leadGroupSchema = obj({
+  relation: oneOfValues(['duplicate', 'shared_cause', 'chain']),
+  members: arr(refSchema, 2),
+  origins: arr(obj({ member: refSchema, origin: text(), lead_generator: text() })),
+  proposed_cause: text(),
+  dissent: strings,
+  chain_investigation: nullable(refSchema),
+  status: oneOfValues(['proposed', 'confirmed', 'dissolved']),
+  status_reason: nullable(str()),
+});
+
+export interface MethodVersionBody {
+  component: 'workflow' | 'prompt' | 'retrieval' | 'tool' | 'check' | 'role';
+  name: string;
+  version: string;
+  description: string;
+  content: ArtifactRef | null;
+  previous: Ref | null;
+  status: 'proposed' | 'adopted' | 'rejected' | 'rolled_back' | 'superseded';
+  evaluation: {
+    summary: string;
+    evidence: ArtifactRef | null;
+    held_out: { cases: string[]; runs_per_case: number; baseline_failures: string[]; candidate_failures: string[] };
+  } | null;
+  decision: Ref | null;
+}
+const methodVersionSchema = obj({
+  component: oneOfValues(['workflow', 'prompt', 'retrieval', 'tool', 'check', 'role']),
+  name: text(),
+  version: text(),
+  description: text(),
+  content: nullable(artifactRefSchema),
+  previous: nullable(refSchema),
+  status: oneOfValues(['proposed', 'adopted', 'rejected', 'rolled_back', 'superseded']),
+  evaluation: nullable(
+    obj({
+      summary: text(),
+      evidence: nullable(artifactRefSchema),
+      held_out: obj({ cases: strings, runs_per_case: int(1), baseline_failures: strings, candidate_failures: strings }),
+    }),
+  ),
+  decision: nullable(refSchema),
+});
+
+
+export interface PositionBody {
+  /** Whose position this is: the investigation's author or the challenger (DEC-007; DEC-008 Q-017). */
+  role: 'author' | 'challenger';
+  investigation: Ref;
+  /** Verbatim text in the archive; packets carry it unchanged, never a synthesized summary. */
+  content: ArtifactRef;
+  /** Derived by the controller from the submitting channel, never self-reported. */
+  submitted_by: { channel: 'worker' | 'auditor'; principal: string; worker_role: string | null; job: Ref | null };
+  /** Agent-declared model and provider identity, when the agent host exposes it. */
+  model: string | null;
+  provider: string | null;
+  context_manifest: ArtifactRef | null;
+  /** Whether the challenger's initial context withheld the author's rationale and provisional statements. */
+  initial_context_withheld: boolean | null;
+}
+const positionSchema = obj({
+  role: oneOfValues(['author', 'challenger']),
+  investigation: refSchema,
+  content: artifactRefSchema,
+  submitted_by: obj({ channel: oneOfValues(['worker', 'auditor']), principal: text(), worker_role: nullable(str()), job: nullable(refSchema) }),
+  model: nullable(str()),
+  provider: nullable(str()),
+  context_manifest: nullable(artifactRefSchema),
+  initial_context_withheld: nullable(bool()),
+});
+
+
+export interface EvaluationContractBody {
+  /** Frozen before a pilot (harness-evaluation.md, "Pilot protocol" step 1). */
+  name: string;
+  targets: { engagement: string; snapshot: Ref | null; units: string[] }[];
+  method_versions: string[];
+  models: { provider: string; model: string; settings: string }[];
+  tools: string[];
+  task_budgets: string;
+  data_access: string;
+  severity_rubric: string;
+  dedup_policy: string;
+  labels: { case: string; kind: 'historical_withheld' | 'seeded_fault' | 'repaired_variant' | 'fresh_consented'; held_out: boolean; reference_defects: string[] }[];
+  metric_version: string;
+  targets_set_before_run: { metric: string; target: string }[];
+  status: 'draft' | 'frozen' | 'superseded';
+  frozen_at: string | null;
+}
+const evaluationContractSchema = obj({
+  name: text(),
+  targets: arr(obj({ engagement: text(), snapshot: nullable(refSchema), units: strings })),
+  method_versions: strings,
+  models: arr(obj({ provider: text(), model: text(), settings: str() })),
+  tools: strings,
+  task_budgets: str(),
+  data_access: str(),
+  severity_rubric: str(),
+  dedup_policy: str(),
+  labels: arr(
+    obj({
+      case: text(),
+      kind: oneOfValues(['historical_withheld', 'seeded_fault', 'repaired_variant', 'fresh_consented']),
+      held_out: bool(),
+      reference_defects: strings,
+    }),
+  ),
+  metric_version: text(),
+  targets_set_before_run: arr(obj({ metric: text(), target: text() })),
+  status: oneOfValues(['draft', 'frozen', 'superseded']),
+  frozen_at: nullable(isoTime),
+});
+
+export interface CanaryBody {
+  /** NFR-14: a seeded packet the auditor reviews like any other; its label is hidden from the screen. */
+  engagement: string;
+  packet: Ref;
+  kind: 'invalid_claim_plausible_narrative' | 'valid_claim_weakened_counterargument';
+  /** What catching it means: rejecting/disputing an invalid claim, or not dismissing a valid one. */
+  expected: 'not_accepted' | 'not_dismissed';
+  outcome: { decision: Ref; disposition: string; caught: boolean } | null;
+}
+const canarySchema = obj({
+  engagement: text(),
+  packet: refSchema,
+  kind: oneOfValues(['invalid_claim_plausible_narrative', 'valid_claim_weakened_counterargument']),
+  expected: oneOfValues(['not_accepted', 'not_dismissed']),
+  outcome: nullable(obj({ decision: refSchema, disposition: text(), caught: bool() })),
+});
+
 export const RECORD_SCHEMAS = {
   engagement: engagementSchema,
   target_snapshot: targetSnapshotSchema,
@@ -1324,6 +1582,15 @@ export const RECORD_SCHEMAS = {
   control_state: controlStateSchema,
   ledger_entry: ledgerSchema,
   proposal_conflict: proposalConflictSchema,
+  kb_diagram: kbDiagramSchema,
+  exploration: explorationSchema,
+  accounting_view: accountingViewSchema,
+  control_item: controlItemSchema,
+  lead_group: leadGroupSchema,
+  method_version: methodVersionSchema,
+  position: positionSchema,
+  evaluation_contract: evaluationContractSchema,
+  canary: canarySchema,
 } satisfies Record<string, Schema>;
 
 export type RecordType = keyof typeof RECORD_SCHEMAS;
@@ -1364,6 +1631,15 @@ export interface BodyByType {
   control_state: ControlStateBody;
   ledger_entry: LedgerEntryBody;
   proposal_conflict: ProposalConflictBody;
+  kb_diagram: KbDiagramBody;
+  exploration: ExplorationBody;
+  accounting_view: AccountingViewBody;
+  control_item: ControlItemBody;
+  lead_group: LeadGroupBody;
+  method_version: MethodVersionBody;
+  position: PositionBody;
+  evaluation_contract: EvaluationContractBody;
+  canary: CanaryBody;
 }
 
 /** Short ID prefixes per record type (IDs are engagement-scoped: `<prefix>-<seq>`). */
@@ -1402,6 +1678,15 @@ export const ID_PREFIX: Record<RecordType, string> = {
   control_state: 'ctl',
   ledger_entry: 'ledger',
   proposal_conflict: 'conflict',
+  kb_diagram: 'diag',
+  exploration: 'expl',
+  accounting_view: 'acct',
+  control_item: 'ctrl',
+  lead_group: 'group',
+  method_version: 'method',
+  position: 'pos',
+  evaluation_contract: 'evalc',
+  canary: 'canary',
 };
 
 // ---------------------------------------------------------------------------------------------

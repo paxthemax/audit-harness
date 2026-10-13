@@ -55,3 +55,15 @@ test('uncommitted writes are quarantined on open; corrupt store fails closed', (
     h.cleanup();
   }
 });
+
+test('a refused create_engagement leaves no store behind', () => {
+  const h = makeHarness();
+  try {
+    assert.throws(() => h.auditor.do('demo', 'create_engagement', { name: 'x' }), (e) => isHarnessError(e, 'invalid_request'));
+    assert.equal(h.ws.hasEngagement('demo'), false);
+    h.auditor.do('demo', 'create_engagement', { name: 'x', owner: 'a', audit_purpose: 'p' });
+    assert.equal(h.ws.hasEngagement('demo'), true);
+  } finally {
+    h.cleanup();
+  }
+});

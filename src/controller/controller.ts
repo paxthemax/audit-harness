@@ -1,4 +1,4 @@
-import { fail, HarnessError } from '../core/errors.ts';
+import { fail, HarnessError, type ErrorCode } from '../core/errors.ts';
 import { digest, digestJson, randomToken } from '../core/hash.ts';
 import type { AnyRef, Ref } from '../core/refs.ts';
 import type { Archive } from '../store/archive.ts';
@@ -32,6 +32,8 @@ export interface Request<P = unknown> {
 }
 
 export interface WorkerGrant {
+  /** The engagement the attempt belongs to; a worker never reaches another scope. */
+  engagement: string;
   attempt: Ref;
   job: Ref;
   authorization: Ref;
@@ -237,6 +239,7 @@ export class Controller {
       channel: 'worker',
       principal: `worker:${job.body.role}:${att.record_id}`,
       grant: {
+        engagement: engagementId,
         attempt: { record_id: att.record_id, revision: att.revision },
         job: att.body.job,
         authorization: job.body.authorization,
@@ -275,14 +278,19 @@ export class Controller {
         operation: req.operation,
       });
     }
+    const scopeKind = def.scope ?? 'engagement';
+    const scope = scopeKind === 'library' ? 'library' : req.engagement_id;
+    if (scopeKind === 'engagement' && scope === 'library') fail('invalid_request', 'operation needs an engagement scope');
     if (principal.channel === 'worker') {
       const g = principal.grant!;
       if (!g.operations.includes(req.operation)) {
         fail('permission_denied', `worker grant does not cover ${req.operation}`, { operation: req.operation });
       }
+      // Reads and writes alike: a worker never leaves its engagement (FR-24).
+      if (scope !== g.engagement || req.engagement_id !== g.engagement) {
+        fail('permission_denied', 'outside the worker grant', { operation: req.operation });
+      }
     }
-    const scope = def.scope === 'library' ? 'library' : req.engagement_id;
-    if (def.scope === 'engagement' && scope === 'library') fail('invalid_request', 'operation needs an engagement scope');
     if (!def.mutating) {
       const store = this.ws.store(scope, true);
       const ctx = this.makeContext(principal, req, store);
@@ -310,16 +318,44 @@ export class Controller {
   }
 
   private mutate<R>(def: OperationDef, principal: Principal, req: Request, scope: string): CallResult<R> {
+    if (def.createsStore) {
+      if (this.ws.hasEngagement(scope)) {
+        // A retried creation with the same idempotency key returns the historical result.
+        if (req.idempotency_key) return this.mutateIn<R>({ ...def, createsStore: false }, principal, req, scope, true);
+        fail('invalid_request', `engagement ${scope} already exists`);
+      }
+      this.ws.createEngagementStore(scope);
+      try {
+        return this.mutateIn<R>(def, principal, req, scope);
+      } catch (e) {
+        // A refused creation leaves nothing behind: the new, uncommitted engagement store is removed.
+        this.ws.discardNewEngagementStore(scope);
+        throw e;
+      }
+    }
+    return this.mutateIn<R>(def, principal, req, scope);
+  }
+
+  private mutateIn<R>(def: OperationDef, principal: Principal, req: Request, scope: string, replayOnly = false): CallResult<R> {
     let store: RecordStore;
     if (def.createsStore) {
-      if (this.ws.hasEngagement(scope)) fail('invalid_request', `engagement ${scope} already exists`);
-      store = this.ws.createEngagementStore(scope);
+      store = this.ws.store(scope);
     } else {
       if (scope !== 'library' && !this.ws.hasEngagement(scope)) fail('not_found', `engagement ${scope} not found`);
       store = this.ws.store(scope, true);
+      // Debris from another process's crashed commit is quarantined before this write (under the lock).
+      if (store.recoverIfDirty()) store = this.ws.store(scope, true, true);
     }
     if (store.corruption) fail('store_corrupt', `store ${scope} is corrupt; writes refused`, { details: store.corruption });
-    if (principal.channel === 'worker' && scope !== req.engagement_id) fail('permission_denied', 'worker cannot leave its engagement');
+    if (principal.channel === 'worker') {
+      if (scope !== req.engagement_id) fail('permission_denied', 'worker cannot leave its engagement');
+      // Re-validate the grant at commit time: it may have been revoked since the session was opened.
+      const att = store.head<'attempt'>(principal.grant!.attempt.record_id);
+      const g = att?.body.grant;
+      if (!att || !g || g.revoked || att.body.status !== 'running' || Date.parse(g.expires_at) < this.clock().getTime()) {
+        fail('grant_expired', 'the worker grant was revoked, expired or its attempt is no longer running', { operation: req.operation });
+      }
+    }
 
     const requestDigest = digestJson({ operation: req.operation, engagement: req.engagement_id, payload: req.payload, expected: req.expected_revisions });
     if (req.idempotency_key) {
@@ -330,6 +366,11 @@ export class Controller {
             operation: req.operation,
           });
         }
+        const refused = (prior.result as { refused?: { code: ErrorCode; reason: string } }).refused;
+        if (refused) {
+          // The original request committed something and was then refused; its replay is refused too.
+          throw new HarnessError(refused.code, refused.reason, { operation: req.operation, committed: true, details: { replayed: prior.event_id } });
+        }
         return {
           result: prior.result as R,
           records: prior.records,
@@ -339,6 +380,7 @@ export class Controller {
         };
       }
     }
+    if (replayOnly) fail('invalid_request', `engagement ${scope} already exists`);
 
     const ctx = this.makeContext(principal, req, store);
 
@@ -362,7 +404,7 @@ export class Controller {
             status: 'open',
           });
           ctx.tx.event('proposal_conflict_retained', { target: exp.record_id });
-          this.commitTx(ctx, def, req, principal, requestDigest, { conflict: true });
+          this.commitTx(ctx, def, req, principal, requestDigest, { conflict: true, refused: { code: 'revision_conflict', reason: err.message.slice('revision_conflict: '.length) } });
           throw new HarnessError('revision_conflict', err.message.slice('revision_conflict: '.length), {
             operation: req.operation,
             ref: exp,
@@ -375,7 +417,10 @@ export class Controller {
     }
 
     const result = def.handler(ctx, req.payload);
-    const committed = this.commitTx(ctx, def, req, principal, requestDigest, (result ?? {}) as Record<string, unknown>);
+    const recorded = ctx._deferred
+      ? { ...((result ?? {}) as Record<string, unknown>), refused: { code: ctx._deferred.code, reason: ctx._deferred.message.slice(ctx._deferred.code.length + 2) } }
+      : ((result ?? {}) as Record<string, unknown>);
+    const committed = this.commitTx(ctx, def, req, principal, requestDigest, recorded);
     if (ctx._deferred) {
       const d = ctx._deferred;
       throw new HarnessError(d.code, d.message.slice(d.code.length + 2), {

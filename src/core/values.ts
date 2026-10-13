@@ -118,6 +118,8 @@ export const DECISION_KINDS = [
   'authorize_work',
   'revise_premise',
   'approve_export',
+  // Evaluation: freezing a pilot's evaluation contract is the operator's decision on the screen.
+  'freeze_evaluation_contract',
 ] as const;
 
 export type WorkState = (typeof WORK_STATES)[number];
