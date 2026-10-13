@@ -1,14 +1,36 @@
-# Events that actually occurred; source paths in summaries.
 - id: EP-FW-2026-1012-001
   timestamp: '2026-10-12T14:05:00Z'
   agent: claude-code
   channel: framework-session
   session_id: framework-plur-setup-2026-10-12
-  tags: [plur, setup, operator-decision]
+  tags:
+    - plur
+    - setup
+    - operator-decision
   summary: >-
-    Instantiated the PLUR store for this repository. The operator chose a
-    repo-local isolated store following the design lab's DEC-001 policy over
-    the global `plur init` (~/.plur). PLUR CLI/MCP 0.21.5 are pinned in
-    mise.toml; PLUR_PATH and PLUR_AUTO_DISCOVER=0 are set in its [env]; .mcp.json
-    starts plur-mcp through mise. Seeded five engrams. See memory/plur/README.md.
-    This timestamp records capture, not the exact time of the decision.
+    Instantiated the PLUR store for this repository. The operator chose a repo-local isolated store following the design
+    lab's DEC-001 policy over the global `plur init` (~/.plur). PLUR CLI/MCP 0.21.5 are pinned in mise.toml; PLUR_PATH
+    and PLUR_AUTO_DISCOVER=0 are set in its [env]; .mcp.json starts plur-mcp through mise. Seeded five engrams. See
+    memory/plur/README.md. This timestamp records capture, not the exact time of the decision.
+- id: EP-1791821015154-vvy3
+  summary: Implemented report, library and context modules with passing tests.
+  channel: mcp
+  timestamp: '2026-10-12T16:03:35.154Z'
+- id: EP-1791821020835-9qao
+  summary: >-
+    Implemented the trusted decision screen (src/screen), capture channel (src/capture), CLI (src/cli/main.ts,
+    bin/harness) and docs/cli.md for the audit harness, with tests in test/screen*, test/capture*, test/cli*.
+  channel: mcp
+  session_id: 698b919b-28bc-43df-a1e6-5846e89ebef7
+  timestamp: '2026-10-12T16:03:40.835Z'
+- id: EP-1791822958060-qu32
+  summary: >-
+    Implemented the audit harness walking skeleton from ../framework-design-lab (controller, Git-backed store and
+    archive, decisions, runner with bwrap sandbox and Foundry adapters, snapshots/probes/freshness,
+    report/export/library, trusted screen, capture, CLI) with four parallel agents, an end-to-end adoption-milestone
+    test, and an adversarial review whose 38 findings were fixed and pinned by tests (91 passing). Lessons
+    ENG-2026-10-12-006..008 were learned explicitly; agent engrams 003-005 were rescoped to project:framework and junk
+    engram 002 retired.
+  channel: mcp
+  session_id: 86089581-c3e1-4a98-84c4-78925f4793ea
+  timestamp: '2026-10-12T16:35:58.061Z'

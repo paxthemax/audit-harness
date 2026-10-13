@@ -23,9 +23,24 @@ engrams:
     activation:
       retrieval_strength: 0.7
       storage_strength: 1
-      frequency: 0
+      frequency: 2
       last_accessed: "2026-10-12"
-    associations: []
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-12-001
+        strength: 0.35
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-FW-2026-1012-003
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-2026-10-12-006
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
     knowledge_anchors:
       - path: README.md
         relevance: primary
@@ -50,7 +65,7 @@ engrams:
     polarity: null
     commitment: locked
     write_count: 1
-    injection_count: 2
+    injection_count: 4
     sources: []
     recurrence_count: 0
     engram_version: 1
@@ -81,7 +96,7 @@ engrams:
     activation:
       retrieval_strength: 0.7
       storage_strength: 1
-      frequency: 0
+      frequency: 2
       last_accessed: "2026-10-12"
     associations: []
     knowledge_anchors:
@@ -110,7 +125,7 @@ engrams:
     polarity: null
     commitment: leaning
     write_count: 1
-    injection_count: 2
+    injection_count: 4
     sources: []
     recurrence_count: 0
     engram_version: 1
@@ -141,9 +156,19 @@ engrams:
     activation:
       retrieval_strength: 0.7
       storage_strength: 1
-      frequency: 0
-      last_accessed: "2026-10-12"
-    associations: []
+      frequency: 4
+      last_accessed: "2026-10-13"
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-12-001
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-FW-2026-1012-001
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
     knowledge_anchors:
       - path: ../framework-design-lab/design/harness-state-and-execution.md
         relevance: primary
@@ -169,7 +194,7 @@ engrams:
     polarity: null
     commitment: leaning
     write_count: 1
-    injection_count: 2
+    injection_count: 4
     sources: []
     recurrence_count: 0
     engram_version: 1
@@ -201,7 +226,7 @@ engrams:
     activation:
       retrieval_strength: 0.7
       storage_strength: 1
-      frequency: 0
+      frequency: 3
       last_accessed: "2026-10-12"
     associations: []
     knowledge_anchors:
@@ -229,7 +254,7 @@ engrams:
     polarity: null
     commitment: locked
     write_count: 1
-    injection_count: 2
+    injection_count: 4
     sources: []
     recurrence_count: 0
     engram_version: 1
@@ -259,9 +284,19 @@ engrams:
     activation:
       retrieval_strength: 0.7
       storage_strength: 1
-      frequency: 0
+      frequency: 2
       last_accessed: "2026-10-12"
-    associations: []
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-12-007
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-2026-10-12-006
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
     knowledge_anchors:
       - path: mise.toml
         relevance: primary
@@ -286,9 +321,1037 @@ engrams:
     polarity: null
     commitment: leaning
     write_count: 1
-    injection_count: 2
+    injection_count: 4
     sources: []
     recurrence_count: 0
     engram_version: 1
     episode_ids: []
     pinned: false
+  - id: ENG-2026-10-12-001
+    version: 2
+    status: active
+    consolidated: false
+    type: behavioral
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-12T16:03:32.349Z"
+    updated_at: "2026-10-12T16:03:32.349Z"
+    statement: >-
+      In the harness framework, freshness relative to the active snapshot must come from src/snapshot/change.ts
+      (currentFreshness/freshnessSummary): only conclusion_freshness records for the engagement's active target_snapshot
+      count, otherwise the conclusion is `current`. Test fixtures that stage freshness therefore need a real
+      target_snapshot set as engagement.active_snapshot (test/report-fixtures.ts stageSnapshot + acceptPolicy).
+    rationale: >-
+      A report test staged freshness against a fake snapshot ref and the required set ignored it after switching to the
+      canonical helper.
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: semantic
+      cognitive_level: apply
+    domain: framework.report
+    tags: []
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 5
+      last_accessed: "2026-10-13"
+    associations:
+      - target_type: engram
+        target: ENG-FW-2026-1012-003
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-FW-2026-1012-001
+        strength: 0.35
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-2026-10-12-006
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-2026-10-12-008
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-2026-10-12-007
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+    knowledge_anchors:
+      - path: src/snapshot/change.ts
+        relevance: supporting
+      - path: src/report/derive.ts
+        relevance: supporting
+    attribution:
+      asserted_by: unidentified
+      runtime:
+        name: plur-core
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: explicit
+      framework:
+        record_ids: []
+        review_status: unreviewed
+        authority: development-lesson
+        approved_by: null
+        approved_on: null
+        stale_if: The anchored code changes the mechanism this lesson describes.
+    polarity: null
+    content_hash: 17cf93ed9c1d4ed3ee39d2675683876a98aefcf47af536a047705995e41afeab
+    commitment: leaning
+    write_count: 1
+    injection_count: 0
+    sources:
+      - scope: project:framework
+        session_id: null
+        stored_at: "2026-10-12T16:03:32.349Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    summary: In the harness framework, freshness relative to the active...
+  - id: ENG-2026-10-12-002
+    version: 2
+    status: retired
+    consolidated: false
+    type: behavioral
+    scope: local
+    visibility: private
+    created_at: "2026-10-12T16:03:35.186Z"
+    updated_at: "2026-10-12T16:35:25.735Z"
+    statement: "\"[]\""
+    rationale: >-
+      Retired: Junk engram: a subagent's session end stored the literal string "[]" as a statement; it carries no
+      knowledge.
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: semantic
+      cognitive_level: apply
+    tags: []
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 0
+      last_accessed: "2026-10-12"
+    associations: []
+    knowledge_anchors: []
+    provenance:
+      origin: session:EP-1791821015154-vvy3
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: unidentified
+      runtime:
+        name: plur-core
+    claim_class: inferred
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: default
+    polarity: null
+    content_hash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    commitment: leaning
+    write_count: 0
+    injection_count: 0
+    sources:
+      - scope: local
+        session_id: EP-1791821015154-vvy3
+        stored_at: "2026-10-12T16:03:35.186Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids:
+      - EP-1791821015154-vvy3
+  - id: ENG-2026-10-12-003
+    version: 2
+    status: active
+    consolidated: false
+    type: procedural
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-12T16:03:40.881Z"
+    updated_at: "2026-10-12T16:03:40.881Z"
+    statement: >-
+      A Claude Code UserPromptSubmit hook's plain stdout on exit 0 is injected into the model's context, and exit 2 or a
+      JSON {decision:'block'} blocks the prompt; a capture hook must write nothing to stdout, always exit 0 and report
+      failures on stderr.
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: procedural
+      cognitive_level: apply
+    tags: []
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 2
+      last_accessed: "2026-10-13"
+    associations: []
+    knowledge_anchors:
+      - path: src/capture/hook.ts
+        relevance: supporting
+    provenance:
+      origin: session:EP-1791821020835-9qao
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: unidentified
+      runtime:
+        name: plur-core
+    claim_class: inferred
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: default
+      _rescoped:
+        from_scope: local
+        at: "2026-10-12T16:35:29.713Z"
+      framework:
+        record_ids: []
+        review_status: unreviewed
+        authority: development-lesson
+        approved_by: null
+        approved_on: null
+        stale_if: The anchored code changes the mechanism this lesson describes.
+    polarity: null
+    content_hash: 6fc01b275248fe06a2890937adffcb1821e7a108307980a574757ecef845a5a7
+    commitment: leaning
+    write_count: 1
+    injection_count: 0
+    sources:
+      - scope: project:framework
+        session_id: EP-1791821020835-9qao
+        stored_at: "2026-10-12T16:03:40.881Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids:
+      - EP-1791821020835-9qao
+    summary: A Claude Code UserPromptSubmit hook's plain stdout on exit...
+  - id: ENG-2026-10-12-004
+    version: 2
+    status: active
+    consolidated: false
+    type: procedural
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-12T16:03:40.928Z"
+    updated_at: "2026-10-12T16:03:40.928Z"
+    statement: >-
+      In this repo, terminal input for the trusted screen must queue readline 'line' events: rl.question() silently
+      drops lines typed or pasted ahead of the next prompt.
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: procedural
+      cognitive_level: apply
+    tags: []
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 0
+      last_accessed: "2026-10-12"
+    associations: []
+    knowledge_anchors:
+      - path: src/screen/tty.ts
+        relevance: supporting
+    provenance:
+      origin: session:EP-1791821020835-9qao
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: unidentified
+      runtime:
+        name: plur-core
+    claim_class: inferred
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: default
+      _rescoped:
+        from_scope: local
+        at: "2026-10-12T16:35:29.791Z"
+      framework:
+        record_ids: []
+        review_status: unreviewed
+        authority: development-lesson
+        approved_by: null
+        approved_on: null
+        stale_if: The anchored code changes the mechanism this lesson describes.
+    polarity: null
+    content_hash: f7d9a02befc1d4b5093b24e224004c834ab5c4779394b3f3f9afe175ea0d34ce
+    commitment: leaning
+    write_count: 1
+    injection_count: 0
+    sources:
+      - scope: project:framework
+        session_id: EP-1791821020835-9qao
+        stored_at: "2026-10-12T16:03:40.928Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids:
+      - EP-1791821020835-9qao
+  - id: ENG-2026-10-12-005
+    version: 2
+    status: active
+    consolidated: false
+    type: architectural
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-12T16:03:40.960Z"
+    updated_at: "2026-10-12T16:03:40.960Z"
+    statement: >-
+      Screen and capture code in this repo renders all record text through src/screen/visible.ts renderVisible, which
+      wraps src/intake/visible.ts and adds a safety-net classifier (variation selectors, line separators, mixed-script
+      words).
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: semantic
+      cognitive_level: evaluate
+    tags: []
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 2
+      last_accessed: "2026-10-12"
+    associations: []
+    knowledge_anchors:
+      - path: src/screen/visible.ts
+        relevance: supporting
+      - path: src/intake/visible.ts
+        relevance: supporting
+    provenance:
+      origin: session:EP-1791821020835-9qao
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: unidentified
+      runtime:
+        name: plur-core
+    claim_class: inferred
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: default
+      _rescoped:
+        from_scope: local
+        at: "2026-10-12T16:35:29.857Z"
+      framework:
+        record_ids: []
+        review_status: unreviewed
+        authority: development-lesson
+        approved_by: null
+        approved_on: null
+        stale_if: The anchored code changes the mechanism this lesson describes.
+    polarity: null
+    content_hash: dd315275461a21eee2c8efb1581b7c725a6c2c68fc1f9712cb869c10b1bf8cd7
+    commitment: leaning
+    write_count: 1
+    injection_count: 0
+    sources:
+      - scope: project:framework
+        session_id: EP-1791821020835-9qao
+        stored_at: "2026-10-12T16:03:40.960Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids:
+      - EP-1791821020835-9qao
+    summary: Screen and capture code in this repo renders all record...
+  - id: ENG-2026-10-12-006
+    version: 2
+    status: active
+    consolidated: false
+    type: architectural
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-12T16:35:48.955Z"
+    updated_at: "2026-10-12T16:35:48.955Z"
+    statement: >-
+      In the harness, engagement.active_snapshot names the snapshot by identity only: the build hook revises the
+      target_snapshot record (inventory, layouts), so the stored ref's revision lags. Resolve the head (activeSnapshotOf
+      in src/snapshot/common.ts, activeSnapshot in src/decision/common.ts) before binding an exact ref into a record or
+      approval.
+    rationale: >-
+      A record that pins the stale revision in depends_on makes every later decision on it fail with stale_dependency,
+      as approve_export did in the milestone test until report/context code resolved heads.
+    source: >-
+      test/e2e-milestone.test.ts failure on 2026-10-12; fix in src/report/export.ts, src/report/render.ts,
+      src/context/builder.ts, src/decision/common.ts
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: semantic
+      cognitive_level: evaluate
+    domain: framework.store
+    tags:
+      - active_snapshot
+      - stale_dependency
+      - build hook
+      - snapshot revision
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 5
+      last_accessed: "2026-10-13"
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-12-001
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-FW-2026-1012-001
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-2026-10-12-007
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-FW-2026-1012-005
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+    knowledge_anchors:
+      - path: src/decision/common.ts
+        relevance: supporting
+      - path: src/snapshot/common.ts
+        relevance: supporting
+      - path: test/e2e-milestone.test.ts
+        relevance: supporting
+    provenance:
+      origin: >-
+        test/e2e-milestone.test.ts failure on 2026-10-12; fix in src/report/export.ts, src/report/render.ts,
+        src/context/builder.ts, src/decision/common.ts
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: claude-code lead session
+      runtime:
+        name: claude-code
+      model:
+        name: claude-opus-5-5
+    claim_class: observed
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: explicit
+      framework:
+        record_ids: []
+        review_status: unreviewed
+        authority: development-lesson
+        approved_by: null
+        approved_on: null
+        stale_if: The anchored code changes the mechanism this lesson describes.
+    polarity: null
+    content_hash: 1d4e568cbe1edca2f273068267c5903f9e9fda80a4d9f58116bcde6b69af85ad
+    commitment: leaning
+    write_count: 1
+    injection_count: 0
+    sources:
+      - scope: project:framework
+        session_id: null
+        stored_at: "2026-10-12T16:35:48.956Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    summary: In the harness, engagement.active_snapshot names the...
+  - id: ENG-2026-10-12-007
+    version: 2
+    status: active
+    consolidated: false
+    type: procedural
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-12T16:35:49.059Z"
+    updated_at: "2026-10-12T16:35:49.059Z"
+    statement: >-
+      When recovering a Git-backed record store after a crash, run `git reset` before quarantining uncommitted files and
+      restore from HEAD: files staged by a crash between `git add` and `git commit` are still in the index, and `git
+      checkout -- .` restores them, resurrecting unacknowledged records.
+    rationale: >-
+      Only HEAD is acknowledged state; the index can hold a half-finished transaction, so restoring from it turns an
+      unacknowledged write into a committed one on the next commit.
+    source: >-
+      adversarial review finding C2 (2026-10-12); fix in src/store/recordStore.ts recoverUncommitted; test 'C2: files
+      staged but never committed are not resurrected by recovery' in test/review-regressions.test.ts
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: procedural
+      cognitive_level: apply
+    domain: framework.store
+    tags:
+      - git
+      - crash recovery
+      - quarantine
+      - index
+      - atomicity
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 5
+      last_accessed: "2026-10-13"
+    associations:
+      - target_type: engram
+        target: ENG-FW-2026-1012-005
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-2026-10-12-006
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-2026-10-12-008
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-2026-10-12-001
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-2026-10-13-001
+        strength: 0.35
+        type: co_accessed
+        updated_at: "2026-10-13"
+    knowledge_anchors:
+      - path: src/store/recordStore.ts
+        relevance: supporting
+      - path: test/review-regressions.test.ts
+        relevance: supporting
+    provenance:
+      origin: >-
+        adversarial review finding C2 (2026-10-12); fix in src/store/recordStore.ts recoverUncommitted; test 'C2: files
+        staged but never committed are not resurrected by recovery' in test/review-regressions.test.ts
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: claude-code lead session
+      runtime:
+        name: claude-code
+      model:
+        name: claude-opus-5-5
+    claim_class: observed
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: explicit
+      framework:
+        record_ids: []
+        review_status: unreviewed
+        authority: development-lesson
+        approved_by: null
+        approved_on: null
+        stale_if: The anchored code changes the mechanism this lesson describes.
+    polarity: null
+    content_hash: 18aebf99271f2dfe1f5fadb8a5fdae62e61458065985077ef03a0f680a5312b4
+    commitment: leaning
+    write_count: 1
+    injection_count: 0
+    sources:
+      - scope: project:framework
+        session_id: null
+        stored_at: "2026-10-12T16:35:49.059Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    summary: When recovering a Git-backed record store after a crash,...
+  - id: ENG-2026-10-12-008
+    version: 2
+    status: active
+    consolidated: false
+    type: architectural
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-12T16:35:49.151Z"
+    updated_at: "2026-10-12T16:35:49.151Z"
+    statement: >-
+      A positive control only counts when it reruns the same experiment of the same claim with the cited guard removed:
+      same adapter, mode, args, fixture and variant as its lineage job, plus a guard_removal. Count controls through
+      isBoundPositiveControl in src/decision/packets.ts, never by job purpose alone.
+    rationale: >-
+      An unbound positive-control job with an arbitrary failing test is interpreted as a counterexample, which would
+      satisfy the High/Critical rejection gate of DEC-008 Q-016 without testing the guard.
+    source: >-
+      adversarial review finding H1 (2026-10-12); ../framework-design-lab/design/harness-state-and-execution.md 'Replay
+      and semantic validity'; fixes in src/decision/packets.ts and src/runner/jobs.ts
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: semantic
+      cognitive_level: evaluate
+    domain: framework.evidence
+    tags:
+      - positive control
+      - guard removal
+      - rejection
+      - DEC-008
+      - Q-016
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 4
+      last_accessed: "2026-10-13"
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-12-001
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+      - target_type: engram
+        target: ENG-2026-10-12-007
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-12"
+    knowledge_anchors:
+      - path: src/decision/packets.ts
+        relevance: supporting
+      - path: src/runner/jobs.ts
+        relevance: supporting
+      - path: ../framework-design-lab/design/harness-state-and-execution.md
+        relevance: supporting
+    provenance:
+      origin: >-
+        adversarial review finding H1 (2026-10-12); ../framework-design-lab/design/harness-state-and-execution.md
+        'Replay and semantic validity'; fixes in src/decision/packets.ts and src/runner/jobs.ts
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: claude-code lead session
+      runtime:
+        name: claude-code
+      model:
+        name: claude-opus-5-5
+    claim_class: observed
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: explicit
+      framework:
+        record_ids: []
+        review_status: unreviewed
+        authority: development-lesson
+        approved_by: null
+        approved_on: null
+        stale_if: The anchored code changes the mechanism this lesson describes.
+    polarity: null
+    content_hash: a8656accc96ab27b0a773d8192d9b479e07a825d3851d5ce5f48b190a34a2f3b
+    commitment: leaning
+    write_count: 1
+    injection_count: 0
+    sources:
+      - scope: project:framework
+        session_id: null
+        stored_at: "2026-10-12T16:35:49.151Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    summary: A positive control only counts when it reruns the same...
+  - id: ENG-2026-10-12-009
+    version: 2
+    status: active
+    consolidated: false
+    type: procedural
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-12T16:35:58.101Z"
+    updated_at: "2026-10-12T16:35:58.101Z"
+    statement: >-
+      Foundry builds and tests run offline inside a bwrap sandbox with --unshare-net when the forge binary directory and
+      the svm solc cache are bound read-only and XDG_DATA_HOME points the guest at that cache; installing compilers is a
+      separate preparation step outside the sandbox.
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: procedural
+      cognitive_level: apply
+    tags: []
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 1
+      last_accessed: "2026-10-13"
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-13-001
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-12-007
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+    knowledge_anchors:
+      - path: src/runner/sandbox.ts
+        relevance: supporting
+      - path: src/runner/adapters.ts
+        relevance: supporting
+    provenance:
+      origin: session:EP-1791822958060-qu32
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: unidentified
+      runtime:
+        name: plur-core
+    claim_class: inferred
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: default
+      framework:
+        record_ids: []
+        review_status: unreviewed
+        authority: development-lesson
+        approved_by: null
+        approved_on: null
+        stale_if: The anchored code changes the mechanism this lesson describes.
+    polarity: null
+    content_hash: 304cc7348bd76a966e2b136608b5a4d68bc44a246ffa128a22cc8af3d313d324
+    commitment: leaning
+    write_count: 1
+    injection_count: 0
+    sources:
+      - scope: project:framework
+        session_id: EP-1791822958060-qu32
+        stored_at: "2026-10-12T16:35:58.101Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids:
+      - EP-1791822958060-qu32
+    summary: Foundry builds and tests run offline inside a bwrap sandbox...
+  - id: ENG-2026-10-13-001
+    version: 2
+    status: active
+    consolidated: false
+    type: procedural
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-13T04:17:54.453Z"
+    updated_at: "2026-10-13T04:17:54.453Z"
+    statement: >-
+      Foundry 1.7 does not honour FOUNDRY_FS_PERMISSIONS from the environment; to stop cheatcode file writes
+      (vm.writeFile, vm.writeLine) in a sandboxed run, rewrite fs_permissions to read-only in the scratch copy's
+      foundry.toml, as src/runner/adapters.ts does.
+    rationale: >-
+      A guest test that can write files can append a forged results line to stdout or alter the work tree, so the runner
+      must deny writes in a way forge actually enforces.
+    source: runner agent check with forge config and a real vm.writeFile run, 2026-10-13; second adversarial review finding M8
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: procedural
+      cognitive_level: apply
+    domain: framework.runner
+    tags:
+      - foundry
+      - forge
+      - fs_permissions
+      - sandbox
+      - cheatcodes
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 3
+      last_accessed: "2026-10-13"
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-12-009
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-12-007
+        strength: 0.35
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-002
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-12-001
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-003
+        type: co_accessed
+        strength: 0.3
+        updated_at: "2026-10-13"
+    knowledge_anchors:
+      - path: src/runner/adapters.ts
+      - path: test/runner-review2.test.ts
+    provenance:
+      origin: >-
+        runner agent check with forge config and a real vm.writeFile run, 2026-10-13; second adversarial review finding
+        M8
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: claude-code lead session
+      runtime:
+        name: claude-code
+      model:
+        name: claude-opus-5-5
+    claim_class: observed
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: explicit
+      framework:
+        record_ids: []
+        review_status: unreviewed
+        authority: development-lesson
+        approved_by: null
+        approved_on: null
+        stale_if: The anchored code changes the mechanism this lesson describes.
+    polarity: null
+    content_hash: 4a5d642a3b9222d70612fe36db6c3bc7ac020a6c3bd417704f2d2a8d12781542
+    commitment: leaning
+    write_count: 1
+    injection_count: 0
+    sources:
+      - scope: project:framework
+        session_id: null
+        stored_at: "2026-10-13T04:17:54.454Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    summary: Foundry 1.7 does not honour FOUNDRY_FS_PERMISSIONS from the...
+  - id: ENG-2026-10-13-002
+    version: 2
+    status: active
+    consolidated: false
+    type: procedural
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-13T04:17:54.567Z"
+    updated_at: "2026-10-13T04:17:54.567Z"
+    statement: >-
+      When code under a node:test run spawns another `node --test`, delete NODE_TEST_CONTEXT from the child's
+      environment and pass --test-reporter=spec; otherwise the child reports to the parent runner and its "ℹ pass/fail"
+      summary never appears.
+    rationale: >-
+      Node marks test-runner children through NODE_TEST_CONTEXT, which switches their output to the parent protocol;
+      src/evaluation/controls.ts parses the summary to decide control gates.
+    source: test/evaluation-controls.test.ts failure and fix in src/evaluation/controls.ts, 2026-10-13
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: procedural
+      cognitive_level: apply
+    domain: framework.testing
+    tags:
+      - node:test
+      - NODE_TEST_CONTEXT
+      - nested test run
+      - control checks
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 1
+      last_accessed: "2026-10-13"
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-12-001
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-001
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+    knowledge_anchors:
+      - path: src/evaluation/controls.ts
+      - path: test/evaluation-controls.test.ts
+    provenance:
+      origin: test/evaluation-controls.test.ts failure and fix in src/evaluation/controls.ts, 2026-10-13
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: claude-code lead session
+      runtime:
+        name: claude-code
+      model:
+        name: claude-opus-5-5
+    claim_class: observed
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: explicit
+      framework:
+        record_ids: []
+        review_status: unreviewed
+        authority: development-lesson
+        approved_by: null
+        approved_on: null
+        stale_if: The anchored code changes the mechanism this lesson describes.
+    polarity: null
+    content_hash: 73c8e13c6eae51533e16bcb4aa2d3f20484910bcf59c5b89a16b941aeb675e90
+    commitment: leaning
+    write_count: 1
+    injection_count: 0
+    sources:
+      - scope: project:framework
+        session_id: null
+        stored_at: "2026-10-13T04:17:54.567Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    summary: When code under a node:test run spawns another `node...
+  - id: ENG-2026-10-13-003
+    version: 2
+    status: active
+    consolidated: false
+    type: procedural
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-13T04:17:54.694Z"
+    updated_at: "2026-10-13T04:17:54.694Z"
+    statement: >-
+      Foundry invariant fuzzing never calls view or pure functions of target contracts: a handler meant to model "every
+      action reverts" must be state-changing, or the campaign makes zero calls instead of reverting ones.
+    rationale: >-
+      The harness distinguishes a campaign that ran nothing (inconclusive) from one whose actions all reverted
+      (inadequate); fixtures must exercise the case they claim to.
+    source: test/e2e-property.test.ts StuckHandler fix, 2026-10-13
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: procedural
+      cognitive_level: apply
+    domain: framework.evidence
+    tags:
+      - foundry
+      - invariant
+      - handler
+      - adequacy
+      - property campaign
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 1
+      last_accessed: "2026-10-13"
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-12-007
+        type: co_accessed
+        strength: 0.3
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-001
+        type: co_accessed
+        strength: 0.3
+        updated_at: "2026-10-13"
+    knowledge_anchors:
+      - path: test/e2e-property.test.ts
+      - path: test/fixtures/vault-property/test/VaultInvariant.t.sol
+    provenance:
+      origin: test/e2e-property.test.ts StuckHandler fix, 2026-10-13
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: claude-code lead session
+      runtime:
+        name: claude-code
+      model:
+        name: claude-opus-5-5
+    claim_class: observed
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: explicit
+      framework:
+        record_ids: []
+        review_status: unreviewed
+        authority: development-lesson
+        approved_by: null
+        approved_on: null
+        stale_if: The anchored code changes the mechanism this lesson describes.
+    polarity: null
+    content_hash: f1fe1268e932e2f4f0b72ab1b05047710a02ca7c37a433790e667fe2f5730129
+    commitment: leaning
+    write_count: 1
+    injection_count: 0
+    sources:
+      - scope: project:framework
+        session_id: null
+        stored_at: "2026-10-13T04:17:54.694Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    summary: Foundry invariant fuzzing never calls view or pure...
