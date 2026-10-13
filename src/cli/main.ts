@@ -48,7 +48,7 @@ import {
 import { recordLines, refText } from '../screen/render.ts';
 import { InputClosed } from '../screen/io.ts';
 import { presentRecords, WITHHELD_NOTICE, type Presented } from '../screen/display.ts';
-import { AnthropicProvider, ProviderBroker, runAuditorCommand, runConformance, runQueue, spendSummary } from '../runner/index.ts';
+import { AnthropicProvider, OmpGateway, OmpGatewayProvider, ProviderBroker, runAuditorCommand, runConformance, runQueue, spendSummary } from '../runner/index.ts';
 import { AGENT_SESSION_ADAPTERS, runAgentSession } from '../capture/agentSession.ts';
 
 // `harness` command-line interface (docs/cli.md). Non-decision operations go through the auditor
@@ -705,15 +705,24 @@ function cmdCall(cli: Cli, args: string[]): number {
 
 /**
  * The provider broker for agent jobs run by this process. A broker already active in the process is
- * used as is; otherwise one is created with the workspace's configured external providers, each
- * credential read from `secrets/providers/<name>.key`. Which providers may receive live-exploitable
- * material is an operator choice (`--live-providers`); by default none may.
+ * used as is; otherwise one is created with the workspace's configured providers: an external
+ * provider's credential is read from `secrets/providers/<name>.key`; `omp_gateway` providers share one
+ * `omp auth-gateway stdio` child per binary and profile, which holds the logins itself. Which providers
+ * may receive live-exploitable material is an operator choice (`--live-providers`); by default none may.
  */
 function ensureBroker(cli: Cli, live: string | undefined): void {
   if (ProviderBroker.active()) return;
   const b = new ProviderBroker(cli.controller, { liveExploitableProviders: live ? live.split(',').filter(Boolean) : [] });
+  const gateways = new Map<string, OmpGateway>();
   for (const p of cli.ws.config.providers) {
     if (p.kind === 'external' && p.name === 'anthropic') b.registerFromWorkspace(new AnthropicProvider());
+    else if (p.kind === 'omp_gateway') {
+      if (!p.omp) throw new UsageError(`provider ${p.name}: an omp_gateway provider needs its omp settings in harness.json`);
+      const key = JSON.stringify([p.omp.binary, p.omp.version, p.omp.profile]);
+      let gw = gateways.get(key);
+      if (!gw) gateways.set(key, (gw = new OmpGateway({ binary: p.omp.binary, version: p.omp.version, profile: p.omp.profile })));
+      b.registerSelfAuthenticating(new OmpGatewayProvider(gw, { name: p.name, upstream: p.omp.upstream, models: p.models, rates: p.omp.rates, headroom: p.omp.headroom }));
+    }
   }
 }
 

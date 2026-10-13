@@ -65,7 +65,7 @@ engrams:
     polarity: null
     commitment: locked
     write_count: 1
-    injection_count: 4
+    injection_count: 6
     sources: []
     recurrence_count: 0
     engram_version: 1
@@ -96,9 +96,29 @@ engrams:
     activation:
       retrieval_strength: 0.7
       storage_strength: 1
-      frequency: 2
-      last_accessed: "2026-10-12"
-    associations: []
+      frequency: 6
+      last_accessed: "2026-10-13"
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-13-004
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-12-009
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-005
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-12-003
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
     knowledge_anchors:
       - path: ../framework-design-lab/design/harness-glossary.md
         relevance: primary
@@ -125,7 +145,7 @@ engrams:
     polarity: null
     commitment: leaning
     write_count: 1
-    injection_count: 4
+    injection_count: 6
     sources: []
     recurrence_count: 0
     engram_version: 1
@@ -156,7 +176,7 @@ engrams:
     activation:
       retrieval_strength: 0.7
       storage_strength: 1
-      frequency: 4
+      frequency: 5
       last_accessed: "2026-10-13"
     associations:
       - target_type: engram
@@ -194,7 +214,7 @@ engrams:
     polarity: null
     commitment: leaning
     write_count: 1
-    injection_count: 4
+    injection_count: 6
     sources: []
     recurrence_count: 0
     engram_version: 1
@@ -226,9 +246,19 @@ engrams:
     activation:
       retrieval_strength: 0.7
       storage_strength: 1
-      frequency: 3
-      last_accessed: "2026-10-12"
-    associations: []
+      frequency: 7
+      last_accessed: "2026-10-13"
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-13-006
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-005
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
     knowledge_anchors:
       - path: memory/plur/README.md
         relevance: primary
@@ -254,7 +284,7 @@ engrams:
     polarity: null
     commitment: locked
     write_count: 1
-    injection_count: 4
+    injection_count: 6
     sources: []
     recurrence_count: 0
     engram_version: 1
@@ -321,7 +351,7 @@ engrams:
     polarity: null
     commitment: leaning
     write_count: 1
-    injection_count: 4
+    injection_count: 6
     sources: []
     recurrence_count: 0
     engram_version: 1
@@ -410,7 +440,7 @@ engrams:
     content_hash: 17cf93ed9c1d4ed3ee39d2675683876a98aefcf47af536a047705995e41afeab
     commitment: leaning
     write_count: 1
-    injection_count: 0
+    injection_count: 2
     sources:
       - scope: project:framework
         session_id: null
@@ -500,9 +530,19 @@ engrams:
     activation:
       retrieval_strength: 0.7
       storage_strength: 1
-      frequency: 2
+      frequency: 5
       last_accessed: "2026-10-13"
-    associations: []
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-13-005
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-FW-2026-1012-002
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
     knowledge_anchors:
       - path: src/capture/hook.ts
         relevance: supporting
@@ -536,7 +576,7 @@ engrams:
     content_hash: 6fc01b275248fe06a2890937adffcb1821e7a108307980a574757ecef845a5a7
     commitment: leaning
     write_count: 1
-    injection_count: 0
+    injection_count: 1
     sources:
       - scope: project:framework
         session_id: EP-1791821020835-9qao
@@ -605,7 +645,7 @@ engrams:
     content_hash: f7d9a02befc1d4b5093b24e224004c834ab5c4779394b3f3f9afe175ea0d34ce
     commitment: leaning
     write_count: 1
-    injection_count: 0
+    injection_count: 1
     sources:
       - scope: project:framework
         session_id: EP-1791821020835-9qao
@@ -676,7 +716,7 @@ engrams:
     content_hash: dd315275461a21eee2c8efb1581b7c725a6c2c68fc1f9712cb869c10b1bf8cd7
     commitment: leaning
     write_count: 1
-    injection_count: 0
+    injection_count: 2
     sources:
       - scope: project:framework
         session_id: EP-1791821020835-9qao
@@ -783,7 +823,7 @@ engrams:
     content_hash: 1d4e568cbe1edca2f273068267c5903f9e9fda80a4d9f58116bcde6b69af85ad
     commitment: leaning
     write_count: 1
-    injection_count: 0
+    injection_count: 2
     sources:
       - scope: project:framework
         session_id: null
@@ -892,7 +932,7 @@ engrams:
     content_hash: 18aebf99271f2dfe1f5fadb8a5fdae62e61458065985077ef03a0f680a5312b4
     commitment: leaning
     write_count: 1
-    injection_count: 0
+    injection_count: 1
     sources:
       - scope: project:framework
         session_id: null
@@ -937,7 +977,7 @@ engrams:
     activation:
       retrieval_strength: 0.7
       storage_strength: 1
-      frequency: 4
+      frequency: 5
       last_accessed: "2026-10-13"
     associations:
       - target_type: engram
@@ -988,7 +1028,7 @@ engrams:
     content_hash: a8656accc96ab27b0a773d8192d9b479e07a825d3851d5ce5f48b190a34a2f3b
     commitment: leaning
     write_count: 1
-    injection_count: 0
+    injection_count: 2
     sources:
       - scope: project:framework
         session_id: null
@@ -1021,7 +1061,7 @@ engrams:
     activation:
       retrieval_strength: 0.7
       storage_strength: 1
-      frequency: 1
+      frequency: 2
       last_accessed: "2026-10-13"
     associations:
       - target_type: engram
@@ -1031,6 +1071,16 @@ engrams:
         updated_at: "2026-10-13"
       - target_type: engram
         target: ENG-2026-10-12-007
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-004
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-FW-2026-1012-002
         strength: 0.3
         type: co_accessed
         updated_at: "2026-10-13"
@@ -1110,7 +1160,7 @@ engrams:
     activation:
       retrieval_strength: 0.7
       storage_strength: 1
-      frequency: 3
+      frequency: 4
       last_accessed: "2026-10-13"
     associations:
       - target_type: engram
@@ -1135,12 +1185,14 @@ engrams:
         updated_at: "2026-10-13"
       - target_type: engram
         target: ENG-2026-10-13-003
-        type: co_accessed
         strength: 0.3
+        type: co_accessed
         updated_at: "2026-10-13"
     knowledge_anchors:
       - path: src/runner/adapters.ts
+        relevance: supporting
       - path: test/runner-review2.test.ts
+        relevance: supporting
     provenance:
       origin: >-
         runner agent check with forge config and a real vm.writeFile run, 2026-10-13; second adversarial review finding
@@ -1229,7 +1281,9 @@ engrams:
         updated_at: "2026-10-13"
     knowledge_anchors:
       - path: src/evaluation/controls.ts
+        relevance: supporting
       - path: test/evaluation-controls.test.ts
+        relevance: supporting
     provenance:
       origin: test/evaluation-controls.test.ts failure and fix in src/evaluation/controls.ts, 2026-10-13
       chain: []
@@ -1259,7 +1313,7 @@ engrams:
     content_hash: 73c8e13c6eae51533e16bcb4aa2d3f20484910bcf59c5b89a16b941aeb675e90
     commitment: leaning
     write_count: 1
-    injection_count: 0
+    injection_count: 2
     sources:
       - scope: project:framework
         session_id: null
@@ -1306,17 +1360,19 @@ engrams:
     associations:
       - target_type: engram
         target: ENG-2026-10-12-007
-        type: co_accessed
         strength: 0.3
+        type: co_accessed
         updated_at: "2026-10-13"
       - target_type: engram
         target: ENG-2026-10-13-001
-        type: co_accessed
         strength: 0.3
+        type: co_accessed
         updated_at: "2026-10-13"
     knowledge_anchors:
       - path: test/e2e-property.test.ts
+        relevance: supporting
       - path: test/fixtures/vault-property/test/VaultInvariant.t.sol
+        relevance: supporting
     provenance:
       origin: test/e2e-property.test.ts StuckHandler fix, 2026-10-13
       chain: []
@@ -1355,3 +1411,474 @@ engrams:
     engram_version: 1
     episode_ids: []
     summary: Foundry invariant fuzzing never calls view or pure...
+  - id: ENG-2026-10-13-004
+    version: 2
+    status: active
+    consolidated: false
+    type: architectural
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-13T04:46:04.213Z"
+    updated_at: "2026-10-13T04:46:04.213Z"
+    statement: >-
+      The operator selected bubblewrap (bwrap) as the harness execution sandbox on 2026-10-13; agent host and model
+      provider remained open at that point.
+    rationale: >-
+      The design leaves the sandbox to the operator; bwrap passed default-deny egress and the conformance checks on the
+      development workstation, and replacing it needs the same checks.
+    source: operator answer in the 2026-10-13 session; recorded in docs/operator-choices.md "Operator decisions"
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: semantic
+      cognitive_level: evaluate
+    domain: framework.decisions
+    tags:
+      - sandbox
+      - bubblewrap
+      - bwrap
+      - operator decision
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 5
+      last_accessed: "2026-10-13"
+    associations:
+      - target_type: engram
+        target: ENG-FW-2026-1012-002
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-12-009
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+    knowledge_anchors: []
+    provenance:
+      origin: operator answer in the 2026-10-13 session; recorded in docs/operator-choices.md "Operator decisions"
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: operator
+      runtime:
+        name: claude-code
+    claim_class: asserted
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: explicit
+    polarity: null
+    content_hash: e09529e1c678a501585afa09750b4702fadb6d59eafaa6fb8b1ba25b3c3a81d0
+    commitment: decided
+    write_count: 1
+    injection_count: 2
+    sources:
+      - scope: project:framework
+        session_id: null
+        stored_at: "2026-10-13T04:46:04.213Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+  - id: ENG-2026-10-13-005
+    version: 2
+    status: active
+    consolidated: false
+    type: architectural
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-13T04:58:30.119Z"
+    updated_at: "2026-10-13T04:58:30.119Z"
+    statement: >-
+      A Claude Pro/Max subscription cannot back harness worker agents: the provider broker must not hold or inject
+      Claude.ai OAuth tokens (Anthropic forbids third parties to collect, store or intermediate them), and third-party
+      harnesses such as pi/omp that use a Claude subscription bill it as per-token extra usage. Brokered agent rounds
+      need an API key; the subscription fits only the auditor's own use of the unmodified claude binary.
+    rationale: >-
+      Anthropic's Claude Code legal-and-compliance page restricts OAuth to ordinary use of native Anthropic apps and
+      requires API keys for products and the Agent SDK; pi 1.2.0 shows a warning that third-party harness use of a
+      Claude subscription draws from extra usage. This changes if Anthropic changes those terms.
+    source: >-
+      https://code.claude.com/docs/en/legal-and-compliance (fetched 2026-10-13); pi-coding-agent 1.2.0
+      dist/modes/interactive/interactive-mode.js ANTHROPIC_SUBSCRIPTION_AUTH_WARNING
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: semantic
+      cognitive_level: evaluate
+    domain: harness.provider
+    tags:
+      - provider-broker
+      - subscription
+      - oauth
+      - claude-code
+      - pi
+      - omp
+      - api-key
+      - agent-host
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 4
+      last_accessed: "2026-10-13"
+    relations:
+      broader: []
+      narrower: []
+      related: []
+      conflicts: []
+      supersedes: []
+      superseded_by:
+        - ENG-2026-10-13-008
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-12-003
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-FW-2026-1012-002
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-006
+        strength: 0.35
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-FW-2026-1012-004
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-007
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+    knowledge_anchors: []
+    provenance:
+      origin: >-
+        https://code.claude.com/docs/en/legal-and-compliance (fetched 2026-10-13); pi-coding-agent 1.2.0
+        dist/modes/interactive/interactive-mode.js ANTHROPIC_SUBSCRIPTION_AUTH_WARNING
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: unidentified
+      runtime:
+        name: plur-core
+    claim_class: documented
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    temporal:
+      learned_at: "2026-10-13T04:58:30.119Z"
+      valid_until: "2027-04-13"
+    structured_data:
+      _scopeSource: explicit
+    polarity: null
+    content_hash: 425c4524e40eb030c1c1b47ac5a602cdfe2c896fce1b166ee4067c5c85c53933
+    commitment: leaning
+    write_count: 1
+    injection_count: 2
+    sources:
+      - scope: project:framework
+        session_id: null
+        stored_at: "2026-10-13T04:58:30.119Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    summary: A Claude Pro/Max subscription cannot back harness worker...
+  - id: ENG-2026-10-13-006
+    version: 2
+    status: active
+    consolidated: false
+    type: behavioral
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-13T05:20:15.357Z"
+    updated_at: "2026-10-13T05:20:15.357Z"
+    statement: >-
+      Operator constraint (2026-10-13): a provider API key is a non-starter for this harness; the operator has only a
+      Claude Code subscription and a ChatGPT subscription. Don't propose buying API credits as the path for agent
+      rounds; design for subscription-backed official CLIs (claude, codex), with omp/pi only on the ChatGPT login.
+    rationale: >-
+      The operator stated it when asked to choose a provider for brokered agent rounds; it holds until the operator says
+      API access is possible.
+    source: conversation 2026-10-13, operator reply on provider selection
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: semantic
+      cognitive_level: apply
+    domain: harness.provider
+    tags:
+      - operator-choice
+      - provider
+      - api-key
+      - subscription
+      - claude-code
+      - codex
+      - omp
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 3
+      last_accessed: "2026-10-13"
+    relations:
+      broader: []
+      narrower: []
+      related: []
+      conflicts: []
+      supersedes: []
+      superseded_by:
+        - ENG-2026-10-13-007
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-13-005
+        strength: 0.35
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-FW-2026-1012-004
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-007
+        strength: 0.35
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-008
+        type: co_accessed
+        strength: 0.3
+        updated_at: "2026-10-13"
+    knowledge_anchors: []
+    provenance:
+      origin: conversation 2026-10-13, operator reply on provider selection
+      chain: []
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: unidentified
+      runtime:
+        name: plur-core
+    claim_class: asserted
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: explicit
+    polarity: null
+    content_hash: 6f73fa2e2517531220b33d27c790fcc4dbcb15a4e421718173cc5656ebdf1830
+    commitment: decided
+    write_count: 1
+    injection_count: 0
+    sources:
+      - scope: project:framework
+        session_id: null
+        stored_at: "2026-10-13T05:20:15.357Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    summary: "Operator constraint (2026-10-13): a provider API key is a..."
+  - id: ENG-2026-10-13-007
+    version: 2
+    status: active
+    consolidated: false
+    type: behavioral
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-13T05:22:55.196Z"
+    updated_at: "2026-10-13T05:22:55.196Z"
+    statement: >-
+      Operator constraint (2026-10-13): no provider API key for this harness. The operator has a Claude Team seat
+      (commercial terms, no training on Claude Code prompts, 30-day retention) and a personal ChatGPT subscription.
+      Claude workers should run as the unmodified claude binary on the Team seat; ChatGPT workers via Codex CLI or omp
+      on the ChatGPT login; never route Claude through omp/pi.
+    rationale: >-
+      The operator ruled out API keys and later reported the Team seat; claude auth status shows subscriptionType team,
+      and Anthropic bills third-party apps on Claude logins from paid extra usage.
+    source: conversation 2026-10-13; claude auth status --json; https://code.claude.com/docs/en/data-usage
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: semantic
+      cognitive_level: apply
+    domain: harness.provider
+    tags:
+      - operator-choice
+      - provider
+      - api-key
+      - team-plan
+      - subscription
+      - claude-code
+      - codex
+      - omp
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 2
+      last_accessed: "2026-10-13"
+    relations:
+      broader: []
+      narrower: []
+      related: []
+      conflicts: []
+      supersedes:
+        - ENG-2026-10-13-006
+      superseded_by:
+        - ENG-2026-10-13-008
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-13-006
+        strength: 0.35
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-005
+        strength: 0.3
+        type: co_accessed
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-008
+        type: co_accessed
+        strength: 0.3
+        updated_at: "2026-10-13"
+    knowledge_anchors: []
+    provenance:
+      origin: conversation 2026-10-13; claude auth status --json; https://code.claude.com/docs/en/data-usage
+      chain:
+        - ENG-2026-10-13-006
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: unidentified
+      runtime:
+        name: plur-core
+    claim_class: asserted
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: explicit
+    polarity: null
+    content_hash: 2b35f30b9bfabdd377a5507e90d0f462f02327037b3d43e6f3b79a117930226b
+    commitment: decided
+    write_count: 1
+    injection_count: 1
+    sources:
+      - scope: project:framework
+        session_id: null
+        stored_at: "2026-10-13T05:22:55.196Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    summary: "Operator constraint (2026-10-13): no provider API key for..."
+  - id: ENG-2026-10-13-008
+    version: 2
+    status: active
+    consolidated: false
+    type: architectural
+    scope: project:framework
+    visibility: private
+    created_at: "2026-10-13T06:19:38.454Z"
+    updated_at: "2026-10-13T06:19:38.454Z"
+    statement: >-
+      Operator decision 2026-10-13: the provider broker's upstream is omp's credential gateway (`omp auth-gateway
+      stdio`, pinned version, dedicated OMP_PROFILE=harness). It serves the Claude Team seat as provider omp-anthropic
+      and the ChatGPT plan as omp-openai-codex, with no API keys and no fallback this round. The operator accepted the
+      Anthropic-terms risk. The harness never reads the logins, and agents reach models only through the broker socket.
+    rationale: >-
+      The operator chose it after omp's gateway answered Claude and GPT tool-use requests in Anthropic Messages format;
+      the broker keeps every check (grant, data class, reservation), so the design's broker rule holds unchanged.
+    source: docs/operator-choices.md (Operator decisions; Defaults for the omp gateway provider); src/runner/ompGateway.ts
+    derivation_count: 1
+    pack: null
+    abstract: null
+    derived_from: null
+    knowledge_type:
+      memory_class: semantic
+      cognitive_level: evaluate
+    domain: harness.provider
+    tags:
+      - operator-choice
+      - provider-broker
+      - omp
+      - auth-gateway
+      - team-plan
+      - chatgpt
+      - subscription
+    activation:
+      retrieval_strength: 0.7
+      storage_strength: 1
+      frequency: 1
+      last_accessed: "2026-10-13"
+    relations:
+      broader: []
+      narrower: []
+      related: []
+      conflicts: []
+      supersedes:
+        - ENG-2026-10-13-005
+        - ENG-2026-10-13-007
+      superseded_by: []
+    associations:
+      - target_type: engram
+        target: ENG-2026-10-13-007
+        type: co_accessed
+        strength: 0.3
+        updated_at: "2026-10-13"
+      - target_type: engram
+        target: ENG-2026-10-13-006
+        type: co_accessed
+        strength: 0.3
+        updated_at: "2026-10-13"
+    knowledge_anchors: []
+    provenance:
+      origin: docs/operator-choices.md (Operator decisions; Defaults for the omp gateway provider); src/runner/ompGateway.ts
+      chain:
+        - ENG-2026-10-13-005
+        - ENG-2026-10-13-007
+        - ENG-2026-10-13-006
+      signature: null
+      license: cc-by-sa-4.0
+    attribution:
+      asserted_by: unidentified
+      runtime:
+        name: plur-core
+    claim_class: asserted
+    feedback_signals:
+      positive: 0
+      negative: 0
+      neutral: 0
+    structured_data:
+      _scopeSource: explicit
+    polarity: null
+    content_hash: 50c29edf33e581f9b87a869492a93d467b2d4fc09ae2b1ddd6596dea361baaf8
+    commitment: decided
+    write_count: 1
+    injection_count: 0
+    sources:
+      - scope: project:framework
+        session_id: null
+        stored_at: "2026-10-13T06:19:38.454Z"
+    recurrence_count: 0
+    engram_version: 1
+    episode_ids: []
+    summary: "Operator decision 2026-10-13: the provider broker's..."

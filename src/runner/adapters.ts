@@ -820,7 +820,8 @@ const AGENT_ARGS = ['task', 'model', 'max_turns', 'max_tokens', 'captured_input'
 function validateAgentArgs(args: Record<string, unknown>): void {
   onlyKeys(args, AGENT_ARGS);
   if (typeof args.task !== 'string' || !args.task.trim() || args.task.length > 64 * 1024) fail('invalid_request', 'agent jobs need a task (at most 64 KiB)');
-  if (typeof args.model !== 'string' || !/^[A-Za-z0-9._:@-]{1,128}$/.test(args.model)) fail('invalid_request', 'agent jobs name a model');
+  // A gateway model id carries its upstream: `<upstream>/<model>` (src/runner/ompGateway.ts).
+  if (typeof args.model !== 'string' || !/^[A-Za-z0-9._:@-]{1,64}(\/[A-Za-z0-9._:@-]{1,64})?$/.test(args.model)) fail('invalid_request', 'agent jobs name a model');
   intArg(args, 'max_turns');
   intArg(args, 'max_tokens');
   const c = args.captured_input as { record_id?: unknown; revision?: unknown } | undefined;

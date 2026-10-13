@@ -11,5 +11,6 @@ export { spendSummary } from './ledger.ts';
 export { registerAdapter, commandAdapter, adapterFor, listAdapters } from './adapters.ts';
 export { BwrapSandbox } from './sandbox.ts';
 export { AnthropicProvider, PROPOSED_ANTHROPIC_RATES } from './anthropic.ts';
+export { OmpGateway, OmpGatewayProvider, PROPOSED_OMP_HEADROOM, PROPOSED_OMP_NOTIONAL_RATES } from './ompGateway.ts';
 export { runConformance, checkAdapterConformance, checkAgentHostConformance, checkSandboxEgress } from './conformance.ts';
 export { referenceAgentAdapter } from './adapters.ts';

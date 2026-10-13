@@ -136,8 +136,26 @@ Recorded proposals that present IMPLEMENTED behavior are receipted, or withheld 
 own prose is not a record and is shown as is.
 
 `job run` and `agent session` use the process's provider broker; when none is active, one is created with the
-workspace's configured external providers (credentials in `secrets/providers/<name>.key`). Which providers may
-receive live-exploitable material is an operator choice (`--live-providers`; default none).
+workspace's configured providers: an external provider reads its credential from `secrets/providers/<name>.key`,
+and `omp_gateway` providers share one `omp auth-gateway stdio` child that holds the logins itself. Which providers
+may receive live-exploitable material is an operator choice (`--live-providers`; default none).
+
+The operator's provider choice (2026-10-13) is omp's gateway. Its entries in `harness.json`:
+
+```json
+"providers": [
+  { "name": "omp-anthropic", "kind": "omp_gateway",
+    "models": ["anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-5-5"],
+    "omp": { "binary": "/path/to/omp", "version": "18.10.1", "profile": "harness", "upstream": "anthropic" } },
+  { "name": "omp-openai-codex", "kind": "omp_gateway",
+    "models": ["openai-codex/gpt-5.6-sol", "openai-codex/gpt-5.6-luna"],
+    "omp": { "binary": "/path/to/omp", "version": "18.10.1", "profile": "harness", "upstream": "openai-codex" } }
+]
+```
+
+`omp.rates` (notional USD per million tokens) and `omp.headroom` (a fraction of a plan window) override the
+proposed defaults listed in [operator-choices.md](operator-choices.md#defaults-for-the-omp-gateway-provider).
+Agent jobs name the gateway model id, for example `--model anthropic/claude-sonnet-5-5`.
 
 `agent run` builds the role's context (`build_context`) and queues an `agent` job on the `reference_agent` adapter.
 It uses the investigation's authorization, or the single active one, unless `--authorization` names another. The

@@ -24,7 +24,24 @@ export interface WorkspaceConfig {
   /** Foundry toolchain location (operator choice); null = resolve `forge` from PATH at registration. */
   tools: { forge: string | null };
   /** Provider policy (operator choice). No real provider is configured by default. */
-  providers: { name: string; kind: 'fake' | 'external'; models: string[] }[];
+  providers: ProviderConfig[];
+}
+
+export interface ProviderConfig {
+  name: string;
+  kind: 'fake' | 'external' | 'omp_gateway';
+  models: string[];
+  /** For `omp_gateway`: the pinned omp binary and the profile holding the harness's logins. */
+  omp?: {
+    binary: string;
+    version: string;
+    profile: string;
+    upstream: 'anthropic' | 'openai-codex';
+    /** Notional USD per million tokens; omitted = the proposed table in src/runner/ompGateway.ts. */
+    rates?: Record<string, { input: number; output: number; cache_write: number; cache_read: number }>;
+    /** Fraction of any plan window at which new calls are refused; omitted = the proposed default. */
+    headroom?: number;
+  };
 }
 
 const ENGAGEMENT_ID = /^[a-z0-9][a-z0-9-]{1,62}$/;

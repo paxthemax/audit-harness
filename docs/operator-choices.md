@@ -7,6 +7,7 @@ The accepted baseline leaves the store, runner, model provider, sandbox, agent h
 | Date | Choice | Decision |
 |---|---|---|
 | 2026-10-13 | Sandbox | **bubblewrap (`bwrap`)**, the working default, selected by the operator. It passed the default-deny egress and conformance checks on the development workstation. Replacing it later needs the same conformance checks |
+| 2026-10-13 | Model provider | **omp's credential gateway** (`omp auth-gateway stdio` from oh-my-pi, version pinned) as the provider broker's upstream. It serves the operator's Claude Team seat as `omp-anthropic` and ChatGPT plan as `omp-openai-codex` from a dedicated omp profile; there are no API keys. The operator accepts that Anthropic's terms do not permit third-party apps to hold Claude logins. On 2026-10-13, Claude calls through omp counted against the Team plan's limits, not extra usage. No fallback in this round. Each engagement still approves each provider separately, and for the live-exploitable class with `--live-providers`. See [Defaults for the omp gateway provider](#defaults-for-the-omp-gateway-provider) |
 
 ## Choices the specification leaves open
 
@@ -15,10 +16,38 @@ The accepted baseline leaves the store, runner, model provider, sandbox, agent h
 | Store | Append-only Git repositories, one per engagement plus one for the mechanism library, validated against JSON Schemas. This is the walking skeleton the spec prescribes (DEC-008, Q-020) | `src/store/` | A transactional store (for example SQLite) is a [deferred mechanism](../../framework-design-lab/design/harness-state-and-execution.md#deferred-mechanisms). It needs journal-consistent backup and the recovery scenarios before adoption |
 | Runner | The controller process runs one job at a time as a child process group it owns | `src/runner/` | Parallel or remote workers bring leases, heartbeats and fencing (deferred mechanisms) |
 | Sandbox | **Decided 2026-10-13: bubblewrap.** Network, PID, IPC and UTS namespaces unshared, read-only system and toolchain binds, read-only target snapshot, per-attempt writable scratch, scrubbed environment. Execution is refused when `bwrap` is missing | `src/runner/sandbox.ts` | Any replacement must first demonstrate default-deny egress ([conformance](../../framework-design-lab/design/harness-interface-contracts.md#compatibility-and-conformance)) |
-| Model provider | None configured. The provider broker enforces engagement approval, data classes, reservations and `outcome_unknown` accounting; a `FakeProvider` exists for tests only | `src/runner/provider.ts` | Register a provider adapter in the workspace configuration and approve it per engagement in `accept_scope_and_policy` |
+| Model provider | **Decided 2026-10-13: omp's credential gateway** (`omp_gateway` providers in `harness.json`). The provider broker enforces engagement approval, data classes, reservations and `outcome_unknown` accounting for it as for any provider. The Anthropic API adapter remains available; a `FakeProvider` exists for tests only | `src/runner/ompGateway.ts`, `src/runner/provider.ts` | Register another provider adapter in the workspace configuration and approve it per engagement in `accept_scope_and_policy` |
 | Agent host | Not selected. A reference host (`reference_agent`) passes every conformance check. Claude Code was trialled as a candidate (`claude_code` adapter) and passes all five agent-tool conditions in terminal-wrapper mode: see [agent-host-trial.md](agent-host-trial.md) for the evidence and the caveats an operator must weigh. The capture channel works as a terminal wrapper (`harness capture`) and as a Claude Code `UserPromptSubmit` hook adapter (`harness capture-hook`) | `src/agents/`, `src/capture/`, `src/runner/` | Choose a host; for Claude Code, weigh the trial's caveats (headless or terminal-wrapper use only, synthesized streaming, dropped beta headers untested against a real provider) |
 | Numeric limits | No limit is hard-coded. Every work authorization carries finite spend, runtime, concurrency, child-task, round, retry, repair, output, memory and process limits; review, clarification and decision capacities are set in `accept_scope_and_policy` | `src/decision/work.ts`, `src/schema/records.ts` | The spec's proposed starting values (three investigations per batch, two concurrent agent workers, one heavy experiment, zero child tasks, two repairs per variant) are pilot settings for the operator to set |
 | Toolchain | Foundry (`forge`) resolved from `PATH` or `harness.json`; Solidity compilers from the local `svm` cache, bound read-only into the sandbox. Installing compilers is a separate preparation step outside the sandbox | `src/runner/adapters.ts` | Pin tool images and register further adapters (Slither, Echidna, Medusa, Halmos) under the operator's integration policy |
+
+## Defaults for the omp gateway provider
+
+The broker starts one `omp auth-gateway stdio` child per omp binary and profile and talks to it in JSON lines. The gateway holds the logins; the broker reads and holds no credential for these providers. Agents still reach it only through the per-attempt broker socket. Set it up once:
+
+```sh
+OMP_PROFILE=harness omp login anthropic        # the Claude Team seat
+OMP_PROFILE=harness omp login openai-codex     # the ChatGPT plan
+```
+
+| Rule | Default | Code |
+|---|---|---|
+| omp version | Pinned (18.10.1 at the decision). A gateway reporting another version is refused until the operator reviews the new version and updates `harness.json` | `OmpGateway`, `src/runner/ompGateway.ts` |
+| Logins | A dedicated omp profile (`harness`, through `OMP_PROFILE`) holding only the two logins, not the operator's other omp logins | `harness.json`, `src/runner/ompGateway.ts` |
+| Gateway process | Runs outside every sandbox in an empty temporary working directory; its environment is `HOME`, `PATH`, `LANG`, `OMP_PROFILE` and `NO_COLOR` only. It is kept alive only while a request is in flight and restarts after an exit | `src/runner/ompGateway.ts` |
+| Providers and models | One broker provider per upstream (`omp-anthropic`, `omp-openai-codex`) so an engagement approves each separately; model ids are `<upstream>/<model>`, and agent jobs accept one `/` in a model id | `OmpGatewayProvider`; `validateAgentArgs`, `src/runner/adapters.ts` |
+| Spend | Notional: the API-list equivalent at proposed rates, so reservations, budgets and reports keep working. Claude rates are the list prices of 2026-10-06; GPT-5.6 rates come from third-party listings that disagree, and the higher figure is used. A model without a rate is refused | `PROPOSED_OMP_NOTIONAL_RATES` |
+| Plan headroom | No new call while any of the upstream's plan windows is 80% used or more, or the plan reports its limit reached; the reading is at most 60 s old. This leaves room for the operator's own use of the same plan | `PROPOSED_OMP_HEADROOM`, `PROPOSED_OMP_USAGE_TTL_MS` |
+| Plan record | Each response artifact carries the plan windows read before the call (labels, used fractions, reset times, plan type; no account identifiers) | `src/runner/provider.ts` |
+| Outcomes | A version mismatch, a missing login, a closed plan, a window past the headroom or an error reply is refused before sending (the reservation is released). A gateway exit after the request was written is `outcome_unknown` (the reservation is held) | `src/runner/ompGateway.ts` |
+| Beta headers | Not forwarded; omp sets its own. The broker still records them with the request | `src/runner/ompGateway.ts` |
+
+### Known limitations of the omp gateway
+
+- omp is a third-party binary on the host that holds both logins. The version pin bounds what runs, not what that version does.
+- omp adds a short text of its own to Claude requests (a no-tool probe of 2026-10-13 billed 41 input tokens for a message of about 12). The broker's request record does not contain that addition.
+- The model identity the broker records is the gateway's (`anthropic/claude-haiku-5-5`), not the provider's dated model id.
+- Billing treatment can change without notice. The plan record lets an operator see whether harness calls still move the plan windows.
 
 ## Implementation-level defaults worth reviewing
 

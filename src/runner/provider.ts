@@ -15,7 +15,8 @@ import { ledgerEntries, parseProviderNote, reserve, type ProviderNote } from './
 // a FakeProvider for tests; anthropic.ts is a candidate adapter that only an engagement's policy and a
 // work authorization can approve. Agent hosts reach the broker through brokerSocket.ts (Messages mode).
 //
-// The broker holds provider credentials in its own memory, outside workers and the record store. A
+// The broker holds provider credentials in its own memory, outside workers and the record store; a
+// self-authenticating provider (ompGateway.ts) keeps its own logins outside every sandbox instead. A
 // call is admitted only with authorized context references (artifact digests the controller already
 // admitted in this engagement), an approved provider and data class, and a reservation of the maximum
 // cost. A timeout after the request may have been accepted records `outcome_unknown` with an
@@ -60,11 +61,15 @@ export interface MessagesResult {
   model: string;
   usage: Record<string, unknown>;
   cost: number | null;
+  /** Plan usage windows observed before the call (subscription providers), archived with the response. */
+  plan?: unknown;
 }
 
 export interface Provider {
   readonly name: string;
   readonly models: string[];
+  /** The provider authenticates itself (a credential gateway such as omp's); the broker holds no key. */
+  readonly ownCredential?: boolean;
   /** Upper bound on the cost of a request (the reservation). */
   maxCost(req: ProviderRequest): number;
   call(req: ProviderRequest, credential: string, signal: AbortSignal): Promise<ProviderResponse>;
@@ -211,6 +216,12 @@ export class ProviderBroker {
     return { available: credential !== null, reason };
   }
 
+  /** Register a provider that authenticates itself; the broker reads and holds no credential for it. */
+  registerSelfAuthenticating(provider: Provider): void {
+    if (!provider.ownCredential) throw new Error(`provider ${provider.name} does not authenticate itself`);
+    this.providers.set(provider.name, { provider, credential: null, unavailable: null });
+  }
+
   provider(name: string): Provider | null {
     return this.providers.get(name)?.provider ?? null;
   }
@@ -248,8 +259,10 @@ export class ProviderBroker {
     if (!pending) fail('not_found', `provider call ${callId} not found`);
     if (pending.outcome) fail('idempotency_conflict', `provider call ${callId} already has outcome ${pending.outcome}; a new call needs a new reservation`);
     const reg = this.providers.get(pending.note.provider);
-    if (!reg || !reg.credential) fail('unsupported', reg?.unavailable ?? `provider ${pending.note.provider} is not registered with the broker`);
-    const credential = reg.credential;
+    if (!reg || reg.unavailable !== null || (!reg.credential && !reg.provider.ownCredential)) {
+      fail('unsupported', reg?.unavailable ?? `provider ${pending.note.provider} is not registered with the broker`);
+    }
+    const credential = reg.credential ?? '';
     const messagesMode = pending.note.mode === 'messages';
     const ac = new AbortController();
     let timer: NodeJS.Timeout | undefined;
@@ -272,7 +285,7 @@ export class ProviderBroker {
           outcome = { call_id: callId, outcome: 'outcome_unknown', reason: `no response within ${this.timeoutMs} ms; the provider may have accepted the request` };
         } else {
           body = r.response;
-          const response = store.archive.putJson({ format: 'harness.provider_messages_response/1', response: r.response, usage: r.usage });
+          const response = store.archive.putJson({ format: 'harness.provider_messages_response/1', response: r.response, usage: r.usage, ...(r.plan !== undefined ? { plan: r.plan } : {}) });
           outcome = { call_id: callId, outcome: 'completed', response, model_returned: r.model, cost: r.cost };
         }
       } else {
