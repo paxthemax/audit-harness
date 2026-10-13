@@ -279,6 +279,7 @@ export async function runJob(controller: Controller, engagementId: string, jobId
     ];
     const env: Record<string, string> = { ...plan.env, HARNESS_OUTBOX: '/outbox', HARNESS_TARGET: '/target' };
     const desc0 = adapter.descriptor();
+    let taskFile: ArtifactRef | null = null;
     const auth = store.mustHead(job.body.authorization.record_id, 'work_authorization');
     // UNIX socket paths are limited (~108 bytes); a deep workspace gets a short private directory.
     const harness = join(dir, 'harness', 'broker.sock').length > 100 ? mkdtempSync(join(tmpdir(), 'hh-')) : join(dir, 'harness');
@@ -307,6 +308,8 @@ export async function runJob(controller: Controller, engagementId: string, jobId
         },
       };
       writeFileSync(join(harness, 'task.json'), JSON.stringify(task, null, 2) + '\n', { mode: 0o444 });
+      // The exact task the sandbox received, kept with the evidence (input-capture checks compare it).
+      taskFile = store.archive.putFile(join(harness, 'task.json'));
       binds.push({ src: join(dir, 'context'), dest: '/context' });
       env.HARNESS_TASK = '/run/harness/task.json';
       env.HARNESS_CONTEXT = '/context';
@@ -421,6 +424,7 @@ export async function runJob(controller: Controller, engagementId: string, jobId
         missing_or_truncated: [...missing, ...interp.missing],
         limitations: [
           ...(egress ? ['egress_denied: the guest attempted network access; the sandbox has no network (default-deny), nothing was sent'] : []),
+          ...(taskFile ? [`task: /run/harness/task.json ${taskFile.artifact} (written by the runner from the job args)`] : []),
           ...brokerSummary(brokerSocket),
           ...(outbox.length
             ? [`outbox: ${outbox.length} entr${outbox.length === 1 ? 'y' : 'ies'}: ${['committed', 'refused', 'invalid'].map((st) => `${outbox.filter((o) => o.status === st).length} ${st}`).join(', ')}`]
@@ -432,7 +436,7 @@ export async function runJob(controller: Controller, engagementId: string, jobId
         ],
         environment_reads: envReads,
         termination: res.termination,
-        blobs,
+        blobs: taskFile ? [...blobs, taskFile.artifact] : blobs,
         egress_denied: egress,
       },
       outbox,

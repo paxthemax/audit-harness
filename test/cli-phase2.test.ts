@@ -70,6 +70,11 @@ test(
     assert.deepEqual(job.body.args, { task: 'Trace the callback path', model: 'fake-1', max_turns: 3 });
     assert.equal(job.body.context_manifest?.artifact, r.json().context.context_manifest.artifact);
     assert.equal((await run(h, ['agent', 'run', 'tool', '-e', eid, '--task', 'x', '--model', 'm'])).code, 2);
+    // The interactive session needs a terminal (captures typed input) and a model.
+    assert.equal((await run(h, ['agent', 'session', 'investigator', '-e', eid])).code, 2);
+    r = await run(h, ['agent', 'session', 'investigator', '-e', eid, '--model', 'fake-1']);
+    assert.equal(r.code, 3);
+    assert.match(r.stderr, /permission_denied[\s\S]*interactive terminal/);
 
     const pos = join(dir, 'challenger.md');
     writeFileSync(pos, 'The guard covers withdraw; the PoC pranks no privileged role.');

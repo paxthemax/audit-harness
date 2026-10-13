@@ -1,4 +1,5 @@
 import { refKey, type Ref } from '../core/refs.ts';
+import type { Session } from '../controller/controller.ts';
 import type { RecordEnvelope } from '../schema/records.ts';
 
 // What the screen actually rendered, in order: the content of the display receipt
@@ -93,3 +94,39 @@ export function readFirstActive(engagement: RecordEnvelope<'engagement'> | undef
 }
 
 export const WITHHELD_NOTICE = 'withheld: read-first mode is active; IMPLEMENTED behavior is shown after `end_read_first`';
+
+export interface Presented {
+  shown: RecordEnvelope[];
+  withheld: { record_id: string; revision: number; type: string }[];
+  display_receipt: Ref | null;
+}
+
+/**
+ * Present records on the auditor interface (CLI, agent session). IMPLEMENTED behavior is withheld while
+ * read-first mode is active; otherwise its presentation is recorded with `record_display`, naming the
+ * audit units, before anything is printed, so the controller derives intent timing from it.
+ */
+export function presentRecords(session: Session, engagement: string, envs: RecordEnvelope[], section: string): Presented {
+  const presenting = envs.filter((e) => implementedUnitsOf(e).length > 0);
+  if (!presenting.length) return { shown: envs, withheld: [], display_receipt: null };
+  const eng = session.do(engagement, 'read_records', { type: 'engagement' }).records[0] as RecordEnvelope<'engagement'>;
+  if (readFirstActive(eng)) {
+    const hidden = new Set(presenting.map((e) => `${e.record_id}@${e.revision}`));
+    return {
+      shown: envs.filter((e) => !hidden.has(`${e.record_id}@${e.revision}`)),
+      withheld: presenting.map((e) => ({ record_id: e.record_id, revision: e.revision, type: e.type })),
+      display_receipt: null,
+    };
+  }
+  const units = new Map<string, Ref>();
+  for (const e of presenting) for (const u of implementedUnitsOf(e)) units.set(refKey(u), u);
+  const t = new Date().toISOString();
+  const receipt = session.do(engagement, 'record_display', {
+    rendered: presenting.map((e) => ({ record_id: e.record_id, revision: e.revision })),
+    sections: [{ section, opened_at: t }],
+    started_at: t,
+    ended_at: t,
+    implemented_presented_for: [...units.values()],
+  }).display_receipt as Ref;
+  return { shown: envs, withheld: [], display_receipt: receipt };
+}

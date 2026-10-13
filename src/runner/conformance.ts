@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fail, isHarnessError } from '../core/errors.ts';
-import { canonicalJson } from '../core/hash.ts';
+import { canonicalJson, digest } from '../core/hash.ts';
 import type { Ref } from '../core/refs.ts';
 import { defineOperation, type Controller, type Session } from '../controller/controller.ts';
 import { git } from '../store/git.ts';
@@ -332,9 +332,26 @@ export async function checkAgentHostConformance(controller: Controller, eid: str
   const cfg = await probe(
     controller,
     adapter,
-    ['bad=0', ...['/opt/harness/agent', '/opt/harness/tools', '/run/harness', '/context'].map((d) => `touch ${d}/.probe 2>/dev/null && { echo writable:${d}; bad=1; }`), 'for d in "$HOME/.claude" "$HOME/.config" "$HOME/.anthropic"; do test -e "$d" && { echo present:$d; bad=1; }; done', 'exit $bad'].join('\n'),
+    [
+      'bad=0',
+      ...['/opt/harness/agent', '/opt/harness/tools', '/run/harness', '/context'].map((d) => `touch ${d}/.probe 2>/dev/null && { echo writable:${d}; bad=1; }`),
+      // The tool's own configuration and hook locations: absent, or present and read-only.
+      'for d in "$HOME/.claude"; do if [ -d "$d" ]; then touch "$d/.probe" 2>/dev/null && { echo writable:$d; bad=1; }; mkdir "$d/hooks" 2>/dev/null && { echo writable:$d/hooks; bad=1; }; echo readonly:$d; fi; done',
+      'for f in "$HOME/.claude.json" "$HOME/.claude/settings.json"; do if [ -e "$f" ]; then (: >> "$f") 2>/dev/null && { echo writable:$f; bad=1; } || echo readonly:$f; fi; done',
+      'for d in "$HOME/.config" "$HOME/.anthropic"; do test -e "$d" && { echo present:$d; bad=1; }; done',
+      'exit $bad',
+    ].join('\n'),
   );
-  out.push(result('no_write_to_hooks_or_config', cfg.res.exit_code === 0, cfg.res.exit_code === 0 ? 'agent runtime, tools, grant directory and context are read-only; no inherited configuration in HOME' : cfg.stdout.trim()));
+  const ro = cfg.stdout.split('\n').filter((l) => l.startsWith('readonly:')).map((l) => l.slice(9));
+  out.push(
+    result(
+      'no_write_to_hooks_or_config',
+      cfg.res.exit_code === 0,
+      cfg.res.exit_code === 0
+        ? `agent runtime, tools, grant directory and context are read-only; ${ro.length ? `the tool's configuration is mounted read-only (${ro.join(', ')})` : 'no tool configuration in HOME'}`
+        : cfg.stdout.trim(),
+    ),
+  );
 
   // 5. Provider calls only through the broker: no network, no provider keys in the environment or mounts.
   const egress = await checkSandboxEgress(controller);
@@ -354,7 +371,7 @@ interface MessagesTurn {
  * Read what an agent host actually did in a completed attempt: its receipt, the broker's request
  * log and the Messages requests the broker stored. Nothing here is taken from the caller.
  */
-export function checkLiveAgentRun(controller: Controller, eid: string, jobId: string): CheckResult[] {
+export async function checkLiveAgentRun(controller: Controller, eid: string, jobId: string): Promise<CheckResult[]> {
   const store = controller.ws.store(eid, true);
   const job = store.mustHead(jobId, 'job');
   if (job.body.purpose !== 'agent') return [na('live_launch', `${jobId} is not an agent job`)];
@@ -402,7 +419,8 @@ export function checkLiveAgentRun(controller: Controller, eid: string, jobId: st
   const results = new Map<string, { error: boolean; text: string }>();
   for (const m of last?.messages ?? []) {
     for (const b of Array.isArray(m.content) ? (m.content as Record<string, unknown>[]) : []) {
-      if (b.type === 'tool_use') uses.set(String(b.id), String((b.input as { file_path?: unknown })?.file_path ?? ''));
+      // File-writing tools only (reads are not configuration writes).
+      if (b.type === 'tool_use' && /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(String(b.name))) uses.set(String(b.id), String((b.input as { file_path?: unknown })?.file_path ?? ''));
       if (b.type === 'tool_result') results.set(String(b.tool_use_id), { error: b.is_error === true, text: JSON.stringify(b.content ?? '').slice(0, 160) });
     }
   }
@@ -414,11 +432,46 @@ export function checkLiveAgentRun(controller: Controller, eid: string, jobId: st
       result(
         'own_config_write_denied',
         allDenied,
-        `${configWrites.length} attempt(s) to write ${configWrites.map(([, p]) => p).join(', ')}: ${configWrites.map(([id]) => (results.get(id)?.error ? 'denied' : 'ALLOWED')).join(', ')} by the tool's permission policy. The sandbox HOME itself is writable and discarded after the attempt`,
+        `${configWrites.length} attempt(s) to write ${configWrites.map(([, p]) => p).join(', ')}: ${configWrites.map(([id]) => (results.get(id)?.error ? `refused (${results.get(id)!.text})` : 'ALLOWED')).join(', ')}`,
       ),
     );
   }
+  out.push(await typedInputCaptured(controller, store, job, ev.body.limitations));
   return out;
+}
+
+/**
+ * Terminal-wrapper capture (DEC-008 Q-018): the task the sandbox received is exactly what the auditor
+ * typed on the capture channel, captured before the job was requested, and the capture key is out of
+ * the sandbox's reach.
+ */
+async function typedInputCaptured(controller: Controller, store: ReturnType<Controller['ws']['store']>, job: { record_id: string; body: { args: Record<string, unknown>; adapter: { name: string } } }, limitations: string[]): Promise<CheckResult> {
+  const name = 'typed_input_captured_outside_model';
+  const ref = job.body.args.captured_input as Ref | undefined;
+  if (!ref) return na(name, 'the job carries no captured input (headless task from the controller)');
+  const rec = store.tryGet<'captured_input'>(ref);
+  if (!rec || rec.type !== 'captured_input') return result(name, false, `captured input ${ref.record_id}@${ref.revision} not found`);
+  const problems: string[] = [];
+  if (rec.created_by.channel !== 'capture') problems.push(`recorded on the ${rec.created_by.channel} channel`);
+  const jobCreated = store.history(job.record_id)[0].created_at;
+  if (Date.parse(rec.created_at) > Date.parse(jobCreated)) problems.push('captured after the job was requested');
+  const line = limitations.find((l) => l.startsWith('task: /run/harness/task.json '));
+  const taskDigest = line?.split(' ')[2];
+  if (!taskDigest) problems.push('no task file digest recorded with the run');
+  else {
+    const task = store.archive.getJson<{ args?: { task?: unknown } }>(taskDigest);
+    if (typeof task.args?.task !== 'string' || digest(task.args.task) !== rec.body.content_digest) problems.push('the task the sandbox received differs from the captured text');
+  }
+  const capKey = controller.ws.readSecret('capture.key');
+  const p = await probe(controller, adapterFor(controller.ws, job.body.adapter.name), [`test -e ${q(join(controller.ws.root, 'secrets'))} && exit 1`, `grep -rqs ${q(capKey)} /run /context /opt /home /tmp && exit 2`, 'exit 0'].join('\n'));
+  if (p.res.exit_code !== 0) problems.push('the capture key or secrets are reachable from the sandbox');
+  return result(
+    name,
+    problems.length === 0,
+    problems.length
+      ? problems.join('; ')
+      : `${rec.record_id} recorded on the capture channel (${rec.body.channel.name}) at ${rec.created_at}, before the job; the task in task.json (${taskDigest}) is exactly the captured text (${rec.body.content_digest}); the capture key is unreachable from the sandbox`,
+  );
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -450,7 +503,7 @@ export async function runConformance(session: Session, eid: string, p: Conforman
     if (adapter.descriptor().purposes.includes('agent')) results.push(...(await checkAgentHostConformance(controller, eid, p.adapter)));
   }
   if (p.sandbox_egress) results.push(await checkSandboxEgress(controller));
-  if (p.live_job) results.push(...checkLiveAgentRun(controller, eid, p.live_job));
+  if (p.live_job) results.push(...(await checkLiveAgentRun(controller, eid, p.live_job)));
   const r = controller.runner().do(eid, 'record_conformance', {
     subject: p.adapter ?? 'sandbox',
     descriptor,

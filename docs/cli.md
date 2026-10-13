@@ -120,6 +120,25 @@ harness batch status -e vault                        # batches: status, spend, r
 harness batch reconcile -e vault                     # record batch lifecycle transitions the records imply
 ```
 
+To talk to a harness agent directly, use the session wrapper (the terminal-wrapper fallback of DEC-008 Q-018):
+
+```sh
+harness agent session investigator -e vault --model <model> --investigation inv-0002 [--authorization auth-0003] \
+        [--adapter reference_agent|claude_code] [--max-turns 8] [--live-providers P,...]
+```
+
+For each entry you type (one line, or `/multi`; `/quit` ends), the session (1) records it verbatim on the capture
+channel (same channel name and program digest as `harness capture`), (2) builds the role's context and requests an
+agent job whose task is that exact text, with the `captured_input` reference in its args (the runner checks they
+match), (3) runs the queue and prints the agent's round summary, the proposals its outbox committed and any requests
+the controller refused, all with visible rendering. An entry whose capture failed is never sent to the agent.
+Recorded proposals that present IMPLEMENTED behavior are receipted, or withheld during read-first mode; the agent's
+own prose is not a record and is shown as is.
+
+`job run` and `agent session` use the process's provider broker; when none is active, one is created with the
+workspace's configured external providers (credentials in `secrets/providers/<name>.key`). Which providers may
+receive live-exploitable material is an operator choice (`--live-providers`; default none).
+
 `agent run` builds the role's context (`build_context`) and queues an `agent` job on the `reference_agent` adapter.
 It uses the investigation's authorization, or the single active one, unless `--authorization` names another. The
 authorization must allow the `reference_agent` tool and approve a provider. Model choice and provider remain operator

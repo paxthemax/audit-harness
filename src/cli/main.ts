@@ -47,8 +47,9 @@ import {
 } from '../screen/index.ts';
 import { recordLines, refText } from '../screen/render.ts';
 import { InputClosed } from '../screen/io.ts';
-import { implementedUnitsOf, readFirstActive, WITHHELD_NOTICE } from '../screen/display.ts';
-import { runAuditorCommand, runConformance, runQueue, spendSummary } from '../runner/index.ts';
+import { presentRecords, WITHHELD_NOTICE, type Presented } from '../screen/display.ts';
+import { AnthropicProvider, ProviderBroker, runAuditorCommand, runConformance, runQueue, spendSummary } from '../runner/index.ts';
+import { AGENT_SESSION_ADAPTERS, runAgentSession } from '../capture/agentSession.ts';
 
 // `harness` command-line interface (docs/cli.md). Non-decision operations go through the auditor
 // channel, authenticated with `<workspace>/secrets/auditor.key`. Human decisions go only through the
@@ -405,29 +406,8 @@ function cmdStatus(cli: Cli): number {
  * channel, naming the audit units, so the controller derives intent timing from the first presentation
  * (glossary, "Intent timing"). The receipt is committed before anything is printed.
  */
-function present(cli: Cli, envs: RecordEnvelope[], section: string): { shown: RecordEnvelope[]; withheld: { record_id: string; revision: number; type: string }[]; display_receipt: Ref | null } {
-  const presenting = envs.filter((e) => implementedUnitsOf(e).length > 0);
-  if (!presenting.length) return { shown: envs, withheld: [], display_receipt: null };
-  const eng = cli.call('read_records', { type: 'engagement' }).result.records[0] as RecordEnvelope<'engagement'>;
-  if (readFirstActive(eng)) {
-    const hidden = new Set(presenting.map((e) => `${e.record_id}@${e.revision}`));
-    return {
-      shown: envs.filter((e) => !hidden.has(`${e.record_id}@${e.revision}`)),
-      withheld: presenting.map((e) => ({ record_id: e.record_id, revision: e.revision, type: e.type })),
-      display_receipt: null,
-    };
-  }
-  const units = new Map<string, Ref>();
-  for (const e of presenting) for (const u of implementedUnitsOf(e)) units.set(refKey(u), u);
-  const t = new Date().toISOString();
-  const receipt = cli.call('record_display', {
-    rendered: presenting.map((e) => ({ record_id: e.record_id, revision: e.revision })),
-    sections: [{ section, opened_at: t }],
-    started_at: t,
-    ended_at: t,
-    implemented_presented_for: [...units.values()],
-  }).result.display_receipt as Ref;
-  return { shown: envs, withheld: [], display_receipt: receipt };
+function present(cli: Cli, envs: RecordEnvelope[], section: string): Presented {
+  return presentRecords(cli.auditor(), cli.eng(), envs, section);
 }
 
 function withheldLines(cli: Cli, w: { record_id: string; revision: number; type: string }[]): void {
@@ -523,7 +503,7 @@ async function cmdWork(cli: Cli, args: string[]): Promise<number> {
 
 async function cmdJob(cli: Cli, args: string[]): Promise<number> {
   const [sub, ...rest] = args;
-  const { values, positionals } = parse(rest, { ...PAYLOAD_OPTS, reason: { type: 'string' }, max: { type: 'string' } });
+  const { values, positionals } = parse(rest, { ...PAYLOAD_OPTS, reason: { type: 'string' }, max: { type: 'string' }, 'live-providers': { type: 'string' } });
   switch (sub) {
     case 'request':
       return cli.callAndShow('request_job', payloadOf(values));
@@ -533,6 +513,7 @@ async function cmdJob(cli: Cli, args: string[]): Promise<number> {
     case 'cancel':
       return cli.callAndShow('cancel', payloadOf(values, { ...(positionals[0] ? { job: positionals[0] } : {}), ...(values.reason ? { reason: values.reason } : {}) }));
     case 'run': {
+      ensureBroker(cli, values['live-providers'] as string | undefined);
       const r = await runQueue(cli.controller, cli.eng(), values.max ? { maxJobs: Number(values.max) } : {});
       cli.emit({ ok: true, result: r }, () => {
         cli.print(`Queue stopped: ${r.stopped}; ${r.ran.length} attempt(s) ran.`);
@@ -722,8 +703,60 @@ function cmdCall(cli: Cli, args: string[]): number {
 // -----------------------------------------------------------------------------------------------
 // Agents, positions, fixtures, batches
 
-function cmdAgent(cli: Cli, args: string[]): number {
+/**
+ * The provider broker for agent jobs run by this process. A broker already active in the process is
+ * used as is; otherwise one is created with the workspace's configured external providers, each
+ * credential read from `secrets/providers/<name>.key`. Which providers may receive live-exploitable
+ * material is an operator choice (`--live-providers`); by default none may.
+ */
+function ensureBroker(cli: Cli, live: string | undefined): void {
+  if (ProviderBroker.active()) return;
+  const b = new ProviderBroker(cli.controller, { liveExploitableProviders: live ? live.split(',').filter(Boolean) : [] });
+  for (const p of cli.ws.config.providers) {
+    if (p.kind === 'external' && p.name === 'anthropic') b.registerFromWorkspace(new AnthropicProvider());
+  }
+}
+
+async function cmdAgentSession(cli: Cli, rest: string[]): Promise<number> {
+  const { values, positionals } = parse(rest, {
+    model: { type: 'string' },
+    investigation: { type: 'string' },
+    authorization: { type: 'string' },
+    adapter: { type: 'string' },
+    'max-turns': { type: 'string' },
+    'source-path': { type: 'string', multiple: true },
+    'live-providers': { type: 'string' },
+  });
+  const role = positionals[0];
+  if (!role || !values.model) throw new UsageError(`agent session <role> --model M [--investigation inv-N] [--authorization auth-N] [--adapter ${AGENT_SESSION_ADAPTERS.join('|')}] [--max-turns N]`);
+  const adapter = (values.adapter ?? 'reference_agent') as (typeof AGENT_SESSION_ADAPTERS)[number];
+  if (!AGENT_SESSION_ADAPTERS.includes(adapter)) throw new UsageError(`--adapter must be one of ${AGENT_SESSION_ADAPTERS.join(', ')}`);
+  ensureBroker(cli, values['live-providers']);
+  const io = ttyIO();
+  try {
+    const entries = await runAgentSession({
+      ws: cli.ws,
+      engagement: cli.eng(),
+      io,
+      role,
+      model: values.model,
+      investigation: values.investigation ?? null,
+      authorization: values.authorization ?? null,
+      adapter,
+      max_turns: values['max-turns'] ? Number(values['max-turns']) : null,
+      source_paths: values['source-path'],
+      controller: cli.controller,
+    });
+    if (cli.g.json) cli.out.stdout(JSON.stringify({ ok: true, entries }) + '\n');
+    return EXIT.ok;
+  } finally {
+    io.close();
+  }
+}
+
+async function cmdAgent(cli: Cli, args: string[]): Promise<number> {
   const [sub, ...rest] = args;
+  if (sub === 'session') return cmdAgentSession(cli, rest);
   if (sub === 'roles') {
     const roles = Object.values(ROLE_PROFILES);
     cli.emit({ ok: true, roles }, () => {
@@ -1023,7 +1056,7 @@ Global: --workspace DIR (or HARNESS_WORKSPACE; default ./workspace)  -e/--engage
   statement|investigation|variant|clarification|interpretation|unit|property|correspondence|comparison|discrepancy
          propose [--file body.json] [--body JSON] [--set k=v ...] [--base id@rev]
   work prepare --kind K [--investigation id ...] [--method M ...] | work authorize <proposal> [--draft F]
-  job request --payload JSON|@file | job run [--max N] | job pause|resume [--reason R] | job cancel [job-id]
+  job request --payload JSON|@file | job run [--max N] [--live-providers P,...] | job pause|resume [--reason R] | job cancel [job-id]
   exec --description D [--snapshot S] [--output DIR ...] -- <argv...>   auditor-run command via the trusted runner (FR-41)
   import-artifact <path> [...] --description D [--snapshot S]   import with an untrusted-receipt label
   packet submit --file packet.json
@@ -1038,6 +1071,8 @@ Global: --workspace DIR (or HARNESS_WORKSPACE; default ./workspace)  -e/--engage
   capture-hook                           Claude Code UserPromptSubmit hook (reads hook JSON on stdin)
   schemas --out DIR                      write every JSON Schema (NFR-10)
   call <operation> [--payload JSON|@file] [--set k=v ...] [--library]
+  agent session <role> --model M [--investigation inv-N] [--authorization auth-N] [--adapter reference_agent|claude_code] [--max-turns N] [--live-providers P,...]
+         interactive: each entry captured verbatim first, then sent to the agent as its task
   agent roles | agent run <role> --task T --model M [--investigation inv-N] [--max-turns N] [--authorization auth-N]
   position submit --investigation inv-N --role author|challenger --file text.md
   fixture submit [--investigation inv-N] [--root DIR] <path>...
@@ -1136,7 +1171,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
       case 'call':
         return cmdCall(cli, args);
       case 'agent':
-        return cmdAgent(cli, args);
+        return await cmdAgent(cli, args);
       case 'position':
         return cmdPosition(cli, args);
       case 'fixture':

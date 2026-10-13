@@ -132,4 +132,4 @@ FR-27 (other ecosystems, remote fleets) is `later` and not started.
 | Export omits a deferred high-impact concern | Done | `report.test.ts` |
 | Agent paraphrase of the auditor | Done | `decision.test.ts` |
 | Sandboxed egress | Done | `runner.test.ts` |
-| Adapter and agent-tool conformance checks | Run for `forge_build`, `forge_test` and the reference agent host (all pass), and as a compatibility trial against Claude Code 2.1.296: conditions 2, 3 and 5 pass, 4 fails at sandbox level (mitigated by the tool), 1 not demonstrated headless. See [agent-host-trial.md](agent-host-trial.md) | `runner-conformance.test.ts`, `runner-claude.test.ts` |
+| Adapter and agent-tool conformance checks | Run for `forge_build`, `forge_test` and the reference agent host (all pass), and as a compatibility trial against Claude Code 2.1.296: all five agent-tool conditions pass, condition 1 in terminal-wrapper mode (`harness agent session` captures each typed entry outside the tool before it becomes the agent's task) and condition 4 with the tool's configuration mounted read-only. See [agent-host-trial.md](agent-host-trial.md) | `runner-conformance.test.ts`, `runner-claude.test.ts` |

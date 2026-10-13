@@ -810,7 +810,24 @@ function dirDigest(dir: string): string | null {
   return digestJson(files);
 }
 
-const AGENT_ARGS = ['task', 'model', 'max_turns', 'max_tokens'];
+const AGENT_ARGS = ['task', 'model', 'max_turns', 'max_tokens', 'captured_input'];
+
+/**
+ * Agent job args: `{task, model, max_turns?, max_tokens?, captured_input?}`. `captured_input` names
+ * the capture-channel record the task was typed into (terminal-wrapper mode); request_job checks
+ * that the task is exactly its text.
+ */
+function validateAgentArgs(args: Record<string, unknown>): void {
+  onlyKeys(args, AGENT_ARGS);
+  if (typeof args.task !== 'string' || !args.task.trim() || args.task.length > 64 * 1024) fail('invalid_request', 'agent jobs need a task (at most 64 KiB)');
+  if (typeof args.model !== 'string' || !/^[A-Za-z0-9._:@-]{1,128}$/.test(args.model)) fail('invalid_request', 'agent jobs name a model');
+  intArg(args, 'max_turns');
+  intArg(args, 'max_tokens');
+  const c = args.captured_input as { record_id?: unknown; revision?: unknown } | undefined;
+  if (c !== undefined && (!c || typeof c !== 'object' || typeof c.record_id !== 'string' || !Number.isInteger(c.revision) || Object.keys(c).some((k) => k !== 'record_id' && k !== 'revision'))) {
+    fail('invalid_request', 'captured_input must be an exact reference {record_id, revision}');
+  }
+}
 
 export function referenceAgentAdapter(opts: { name: string; agentDir: string; registered_by: 'builtin' | 'operator'; version?: string }): Adapter {
   const node = realpathSync(process.execPath);
@@ -845,11 +862,7 @@ export function referenceAgentAdapter(opts: { name: string; agentDir: string; re
     descriptor: () => desc,
     validate(args) {
       if (!existsSync(join(agentDir, 'runtime.ts'))) fail('unsupported', `agent runtime ${join(agentDir, 'runtime.ts')} is not installed`);
-      onlyKeys(args, AGENT_ARGS);
-      if (typeof args.task !== 'string' || !args.task.trim() || args.task.length > 64 * 1024) fail('invalid_request', 'agent jobs need a task (at most 64 KiB)');
-      if (typeof args.model !== 'string' || !/^[A-Za-z0-9._:@-]{1,128}$/.test(args.model)) fail('invalid_request', 'agent jobs name a model');
-      intArg(args, 'max_turns');
-      intArg(args, 'max_tokens');
+      validateAgentArgs(args);
     },
     plan(args, ctx) {
       return {
@@ -907,6 +920,9 @@ export function resolveClaudeCode(): string | null {
     return null;
   }
 }
+
+/** Read-only configuration for the tool's HOME: settings with hooks and auto-memory off, an empty .claude.json. */
+export const CLAUDE_HOME_TEMPLATE = fileURLToPath(new URL('./sandbox-tools/claude-home/', import.meta.url));
 
 /** Settings passed with --settings (verified names in the 2.1.x binary): no hooks, no auto-memory. */
 export const CLAUDE_CODE_SETTINGS = { disableAllHooks: true, autoMemoryEnabled: false };
@@ -978,11 +994,7 @@ export function claudeCodeAdapter(opts: { binary: string | null; name?: string; 
     descriptor: describe,
     validate(args) {
       if (!binary) fail('unsupported', 'Claude Code is not installed (set HARNESS_CLAUDE_CODE or put `claude` on PATH)');
-      onlyKeys(args, AGENT_ARGS);
-      if (typeof args.task !== 'string' || !args.task.trim() || args.task.length > 64 * 1024) fail('invalid_request', 'agent jobs need a task (at most 64 KiB)');
-      if (typeof args.model !== 'string' || !/^[A-Za-z0-9._:@-]{1,128}$/.test(args.model)) fail('invalid_request', 'agent jobs name a model');
-      intArg(args, 'max_turns');
-      intArg(args, 'max_tokens');
+      validateAgentArgs(args);
     },
     plan(args, ctx) {
       return {
@@ -1006,6 +1018,9 @@ export function claudeCodeAdapter(opts: { binary: string | null; name?: string; 
         },
         binds: [
           ...(binary ? [{ src: binary, dest: `${TOOL_ROOT}/claude/claude` }] : []),
+          // The tool's own configuration and hook locations, read-only over the fresh HOME.
+          { src: join(CLAUDE_HOME_TEMPLATE, '.claude'), dest: '/home/sandbox/.claude' },
+          { src: join(CLAUDE_HOME_TEMPLATE, 'claude.json'), dest: '/home/sandbox/.claude.json' },
           { src: node, dest: `${TOOL_ROOT}/node/node` },
           { src: SANDBOX_TOOLS_DIR, dest: '/opt/harness/tools' },
         ],

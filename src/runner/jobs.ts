@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fail, HarnessError } from '../core/errors.ts';
-import { canonicalJson, digestJson, isDigest } from '../core/hash.ts';
+import { canonicalJson, digest, digestJson, isDigest } from '../core/hash.ts';
 import type { AnyRef, ArtifactRef, Ref } from '../core/refs.ts';
 import type { WorkAuthorizationKind } from '../core/values.ts';
 import { defineOperation, type OpContext } from '../controller/controller.ts';
@@ -304,6 +304,18 @@ defineOperation<RequestJobPayload>({
       const expected = roleProfile(role).contextRole;
       if (view.role !== expected) fail('invalid_request', `the context manifest was built for role ${view.role}, not ${expected}`);
       if (investigation && view.investigation?.record_id !== investigation.record_id) fail('invalid_request', 'the context manifest was built for another investigation');
+      // Terminal-wrapper mode: the task is exactly what the auditor typed on the capture channel,
+      // captured before this request (DEC-008 Q-018).
+      const captured = (p.args ?? {}).captured_input as Ref | undefined;
+      if (captured) {
+        const rec = ctx.store.tryGet<'captured_input'>(captured);
+        if (!rec || rec.type !== 'captured_input') fail('invalid_request', 'captured_input does not name a captured-input record');
+        if (rec.created_by.channel !== 'capture') fail('invalid_request', 'captured_input must come from the capture channel');
+        if (Date.parse(rec.created_at) > Date.parse(ctx.now)) fail('invalid_request', 'captured_input postdates the job request');
+        if ((p.args ?? {}).task !== rec.body.text || digest(rec.body.text) !== rec.body.content_digest) {
+          fail('invalid_request', 'the task must be exactly the captured text');
+        }
+      }
       const model = (p.args ?? {}).model;
       if (typeof model === 'string') {
         if (!auth.body.capabilities.providers.length) fail('permission_denied', 'the authorization approves no provider for agent model calls');
