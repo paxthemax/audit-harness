@@ -1,6 +1,6 @@
 // A stand-in for `omp auth-gateway stdio` (JSON lines on stdio), so tests never reach a provider.
 // Environment: FAKE_OMP_VERSION (reported version), FAKE_OMP_USED (Anthropic 5-hour used fraction),
-// FAKE_OMP_REPORTS (both | anthropic | none), FAKE_OMP_MODE (ok | error | crash, for /v1/messages) and
+// FAKE_OMP_REPORTS (both | anthropic | none), FAKE_OMP_MODE (ok | error | upstream | crash, for /v1/messages) and
 // FAKE_OMP_LOG (a file that receives one JSON line per start and per request).
 
 import { appendFileSync } from 'node:fs';
@@ -41,6 +41,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   const mode = env.FAKE_OMP_MODE ?? 'ok';
   if (mode === 'crash') process.exit(3);
   if (mode === 'error') return send({ id: req.id, status: 400, body: { type: 'error', error: { type: 'invalid_request_error', message: 'Third-party apps now draw from your extra usage' } } });
+  if (mode === 'upstream') return send({ id: req.id, status: 502, body: { type: 'error', error: { type: 'upstream_error', message: 'The socket connection was closed unexpectedly before the response completed' } } });
   send({
     id: req.id,
     status: 200,

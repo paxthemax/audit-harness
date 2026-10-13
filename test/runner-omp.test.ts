@@ -114,6 +114,18 @@ for (const [name, env, reason] of [
   });
 }
 
+test('omp gateway: an upstream failure relayed as 5xx leaves the outcome unknown and the reservation held', async () => {
+  const S = setup({ FAKE_OMP_MODE: 'upstream' });
+  try {
+    const out = await S.call(CLAUDE);
+    assert.equal(out.outcome, 'outcome_unknown');
+    assert.match(out.reason!, /omp gateway returned 502 .*closed unexpectedly/);
+    assert.equal(out.spend_status, 'uncertain');
+  } finally {
+    S.done();
+  }
+});
+
 test('omp gateway: a crash after the request was sent leaves the outcome unknown and the reservation held; the next call restarts it', async () => {
   const S = setup({ FAKE_OMP_MODE: 'crash' });
   try {

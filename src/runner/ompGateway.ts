@@ -16,6 +16,9 @@ import { messagesInputBytes, ProviderRejected, validateMessagesContent, type Mes
 // {"id":N,"path":P,"method":M,"body":B} and its reply {"id":N,"status":S,"body":B}. Stdin stays open
 // for the life of the process: omp may exit before flushing a large reply once its stdin closes.
 //
+// Outcomes: a refusal by the adapter or a 4xx reply is definite (nothing was served); a 5xx reply or a
+// gateway exit after the request was written leaves the outcome unknown, as a timeout does.
+//
 // Accounting: a subscription has no per-token price. Spend is NOTIONAL, the API-list equivalent at
 // operator-supplied rates, so reservations and budgets keep working and reports can show it. Before
 // each call the adapter reads the plan's usage windows (cached briefly) and refuses while any window of
@@ -372,9 +375,12 @@ export class OmpGatewayProvider implements Provider {
     const plan = await this.planHeadroom(signal);
     const reply = await this.gateway.request('/v1/messages', 'POST', body, signal);
     if (reply.status !== 200) {
-      // An error reply is a definite outcome: the request was not served.
       const e = (reply.body as { error?: { type?: string; message?: string } } | null)?.error;
-      throw new ProviderRejected(`omp gateway returned ${reply.status} (${e?.type ?? 'error'}: ${e?.message ?? ''})`);
+      const why = `omp gateway returned ${reply.status} (${e?.type ?? 'error'}: ${e?.message ?? ''})`;
+      // A 4xx reply is a definite refusal. A 5xx reply relays an upstream failure (for example a
+      // connection closed before the response completed), so the provider may have served the request.
+      if (reply.status >= 500) throw new Error(why);
+      throw new ProviderRejected(why);
     }
     const response = reply.body as Record<string, unknown> | null;
     if (!response || typeof response !== 'object' || !Array.isArray(response.content)) throw new Error('omp gateway returned 200 without a Messages response');

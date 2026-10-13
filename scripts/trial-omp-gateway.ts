@@ -60,7 +60,7 @@ try {
   const intake = h.screen.do(eid, 'authorize_work', {
     reviewed: [eng],
     display_receipt: display(h, eid, [eng]),
-    inputs: { kind: 'intake', capabilities: { tools: ['forge_build', 'reference_agent'], providers: PROVIDERS, network: 'denied' }, limits: { ...LIMITS, rounds: 2 } },
+    inputs: { kind: 'intake', capabilities: { tools: ['forge_build', 'reference_agent'], providers: PROVIDERS, network: 'denied' }, limits: { ...LIMITS, rounds: 2, runtime_seconds: 3600 } },
     rationale: 'build and two seeding rounds, one per provider',
     rationale_authorship: 'human_written',
   }).work_authorization as Ref;
@@ -86,19 +86,22 @@ try {
       .map((e) => {
         const c = JSON.parse(e.body.note).provider_call;
         const plan = c.response ? (s.archive.getJson<{ plan?: { windows: { label: string; used_fraction: number }[] } }>(c.response).plan ?? null) : null;
-        return { provider: c.provider, model_requested: c.model_requested, model_returned: c.model_returned ?? null, outcome: c.outcome, data_class: c.data_class, notional_usd: Number(e.body.spend.toFixed(4)), plan_before_call: plan?.windows.map((w) => `${w.label}: ${Math.round(w.used_fraction * 100)}%`) ?? null };
+        return { call_id: c.id as string, provider: c.provider, model_requested: c.model_requested, model_returned: c.model_returned ?? null, outcome: c.outcome, data_class: c.data_class, notional_usd: Number(e.body.spend.toFixed(4)), plan_before_call: plan?.windows.map((w) => `${w.label}: ${Math.round(w.used_fraction * 100)}%`) ?? null };
       });
-    const proposed = attempt
+    const evidence = attempt ? s.heads('evidence_artifact').find((e) => e.body.attempt?.record_id === attempt.record_id) : undefined;
+    const outbox = evidence?.body.limitations.find((l) => l.startsWith('outbox: ')) ?? 'outbox: none';
+    const proposals_refused = attempt
       ? s
           .events()
-          .filter((e) => e.kind === 'worker_request_committed' && (e.result as { attempt?: string }).attempt === attempt.record_id)
-          .map((e) => (e.result as { file?: string; operation?: string }).operation ?? (e.result as { file?: string }).file)
+          .filter((e) => e.kind === 'worker_request_refused' && (e.result as { attempt?: string }).attempt === attempt.record_id)
+          .map((e) => `${(e.result as { file: string }).file}: ${(e.result as { reason: string }).reason}`)
       : [];
-    const refused = s.events().filter((e) => e.kind === 'provider_call_outcome' && (e.result as { outcome: string }).outcome !== 'completed').map((e) => e.result);
+    const callIds = new Set(calls.map((c) => c.call_id));
+    const refused = s.events().filter((e) => e.kind === 'provider_call_outcome' && callIds.has((e.result as { call_id: string }).call_id) && (e.result as { outcome: string }).outcome !== 'completed').map((e) => e.result);
     const conformance = (await checkLiveAgentRun(h.controller, eid, job.job.record_id)).map((r) => `${r.check}: ${r.status}`);
-    const entry = { label, role, model, job: job.job.record_id, attempt: attempt?.record_id ?? null, status: attempt?.body.status ?? agentRun?.status ?? 'not run', reason: attempt?.body.reason ?? null, seconds: Math.round((Date.now() - t0) / 1000), provider_calls: calls, proposed, refused_calls: refused, conformance, other_jobs_run: ran.ran.filter((r) => r.job !== job.job.record_id).map((r) => `${s.mustHead(r.job, 'job').body.purpose}: ${r.status}`) };
+    const entry = { label, role, model, job: job.job.record_id, attempt: attempt?.record_id ?? null, status: attempt?.body.status ?? agentRun?.status ?? 'not run', reason: attempt?.body.reason ?? null, seconds: Math.round((Date.now() - t0) / 1000), provider_calls: calls, outbox, proposals_refused, refused_calls: refused, conformance, other_jobs_run: ran.ran.filter((r) => r.job !== job.job.record_id).map((r) => `${s.mustHead(r.job, 'job').body.purpose}: ${r.status}`) };
     (summary.rounds as unknown[]).push(entry);
-    console.error(`[trial] ${label}: ${entry.status}, ${calls.length} call(s), ${proposed.length} proposal(s)`);
+    console.error(`[trial] ${label}: ${entry.status}, ${calls.length} call(s), ${outbox}`);
     return entry;
   };
 
@@ -115,7 +118,7 @@ try {
   const batch = h.screen.do(eid, 'authorize_work', {
     reviewed: [invHead],
     display_receipt: display(h, eid, [invHead]),
-    inputs: { kind: 'batch', investigations: [invHead], methods: ['scenario'], capabilities: { tools: ['forge_test', 'reference_agent'], providers: PROVIDERS, network: 'denied' }, limits: LIMITS },
+    inputs: { kind: 'batch', investigations: [invHead], methods: ['scenario'], capabilities: { tools: ['forge_test', 'reference_agent'], providers: PROVIDERS, network: 'denied' }, limits: { ...LIMITS, runtime_seconds: 3600 } },
     rationale: 'trial: admit with agent assistance on both providers',
     rationale_authorship: 'human_written',
   }).work_authorization as Ref;
