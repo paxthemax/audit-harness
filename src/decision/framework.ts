@@ -53,6 +53,8 @@ export interface DecisionKindDef {
   check(ctx: OpContext, p: DecisionPayload, receipt: RecordEnvelope<'display_receipt'>): {
     inbound_link_digest?: string | null;
     evidence_watermark?: number | null;
+    /** Unreviewed statements the decision rests on beyond the depends_on closure (e.g. packet lists). */
+    unreviewed?: Ref[];
   } | void;
   /** Stage the decision's consequences (new revisions, findings, entries...). Returns a result. */
   apply(d: DecisionContext): Record<string, unknown>;
@@ -87,12 +89,36 @@ export function dependencyClosure(store: RecordStore, roots: Ref[], maxDepth = 1
   return [...seen.values()];
 }
 
-/** Closure members that have a newer head than the bound revision (material changes). */
+/** The reviewed revisions plus their direct record inputs. */
+export function directInputs(store: RecordStore, reviewed: Ref[]): Ref[] {
+  const out = new Map<string, Ref>();
+  for (const r of reviewed) {
+    out.set(refKey(r), r);
+    const env = store.tryGet(r);
+    for (const d of env?.depends_on ?? []) if (!isArtifactRef(d) && !d.scope) out.set(refKey(d), d);
+  }
+  return [...out.values()];
+}
+
+/**
+ * A newer revision that changes nothing material. The only case: a target snapshot revised by its
+ * build (inventory, storage layouts, confirmed compiler settings) keeps the same frozen tree and
+ * source identity, so what was reviewed against the earlier revision is the same code.
+ */
+function immaterialRevision(store: RecordStore, bound: Ref, head: RecordEnvelope): boolean {
+  if (head.type !== 'target_snapshot') return false;
+  const old = store.tryGet<'target_snapshot'>(bound);
+  if (!old) return false;
+  const h = head as RecordEnvelope<'target_snapshot'>;
+  return old.body.tree.artifact === h.body.tree.artifact && JSON.stringify(old.body.source) === JSON.stringify(h.body.source) && JSON.stringify(old.body.deployment) === JSON.stringify(h.body.deployment) && JSON.stringify(old.body.fork) === JSON.stringify(h.body.fork);
+}
+
+/** Members that have a newer head than the bound revision (material changes). */
 export function staleMembers(store: RecordStore, closure: Ref[]): { ref: Ref; current: number }[] {
   const stale: { ref: Ref; current: number }[] = [];
   for (const r of closure) {
     const head = store.head(r.record_id);
-    if (head && head.revision !== r.revision) stale.push({ ref: r, current: head.revision });
+    if (head && head.revision !== r.revision && !immaterialRevision(store, r, head)) stale.push({ ref: r, current: head.revision });
   }
   return stale;
 }
@@ -193,7 +219,23 @@ defineOperation<DecisionPayload>({
     const scope = def.scope ?? 'engagement';
     if (scope === 'engagement' && ctx.store.scope === 'library') fail('invalid_request', `${p.decision_kind} is decided in an engagement`);
     if (scope === 'library' && ctx.store.scope !== 'library') fail('invalid_request', `${p.decision_kind} is decided in the library scope`);
-    return commitDecision(ctx, p, def);
+    try {
+      return commitDecision(ctx, p, def);
+    } catch (e) {
+      // A disposition refused for its evidence requirement is itself recorded (an event, no decision),
+      // so the evaluation can list refused rejections (harness-evaluation.md, positive-control outcomes).
+      if (e instanceof HarnessError && e.code === 'evidence_requirement_unmet' && p.decision_kind === 'dispose_investigation' && ctx.tx.empty) {
+        const inputs = (p.inputs ?? {}) as { disposition?: string; investigation?: Ref; potential_impact?: string };
+        const inv = inputs.investigation ? ctx.store.tryGet<'investigation'>(inputs.investigation) : undefined;
+        ctx.tx.event('decision_refused', {
+          attempted: { kind: p.decision_kind, disposition: inputs.disposition ?? null, investigation: inputs.investigation ?? null, impact: inv?.body.potential_impact.effective ?? null },
+          reason: e.message,
+        });
+        ctx.failAfterCommit(e);
+        return {};
+      }
+      throw e;
+    }
   },
 });
 
@@ -211,10 +253,14 @@ export function commitDecision(ctx: OpContext, p: DecisionPayload, def: Decision
 
   const receipt = loadReceipt(ctx, p.display_receipt);
   requireRendered(receipt, p.reviewed);
+  // A display receipt backs exactly one decision (no reuse across decisions, no bulk by receipt).
+  const reused = ctx.store.heads('human_decision').find((d) => d.body.display_receipt.record_id === receipt.record_id);
+  if (reused) fail('display_required', `display receipt ${receipt.record_id} already backs decision ${reused.record_id}; render again for this decision`);
 
-  // Material changes since review: the reviewed revisions and their dependency closure must be current.
+  // Material changes since review: the reviewed revisions and their direct inputs (`depends_on`) must
+  // still be current. The deeper closure feeds the dependency digest and the unreviewed-statement list.
   const closure = dependencyClosure(ctx.store, p.reviewed);
-  const stale = staleMembers(ctx.store, closure);
+  const stale = staleMembers(ctx.store, directInputs(ctx.store, p.reviewed));
   if (stale.length) {
     fail('stale_dependency', 'inputs changed after review; render the current revisions and decide again', {
       details: { changed: stale },
@@ -234,6 +280,12 @@ export function commitDecision(ctx: OpContext, p: DecisionPayload, def: Decision
   }
 
   const unreviewed = unreviewedStatements(ctx.store, closure);
+  for (const r of bound.unreviewed ?? []) {
+    const head = ctx.store.head<'system_statement'>(r.record_id);
+    if (head?.type === 'system_statement' && head.body.review_status !== 'reviewed' && !unreviewed.some((u) => refKey(u) === refKey(r))) {
+      unreviewed.push(r);
+    }
+  }
   const acceptedSet = new Set((p.accepted_unreviewed ?? []).map(refKey));
   for (const a of p.accepted_unreviewed ?? []) {
     if (!unreviewed.some((u) => refKey(u) === refKey(a))) fail('invalid_request', `${refKey(a)} is not an unreviewed statement in the closure`);
