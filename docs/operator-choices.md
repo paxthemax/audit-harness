@@ -2,13 +2,19 @@
 
 The accepted baseline leaves the store, runner, model provider, sandbox, agent host and numeric limits to the operator ([glossary, "Accepted baseline"](../../framework-design-lab/design/harness-glossary.md#terms)). This implementation needed a working default for each so the walking skeleton runs end to end. None of these defaults is an operator decision. Each is isolated behind a small seam so it can be replaced.
 
+## Operator decisions
+
+| Date | Choice | Decision |
+|---|---|---|
+| 2026-10-13 | Sandbox | **bubblewrap (`bwrap`)**, the working default, selected by the operator. It passed the default-deny egress and conformance checks on the development workstation. Replacing it later needs the same conformance checks |
+
 ## Choices the specification leaves open
 
 | Choice | Default in this implementation | Where it lives | What replacing it involves |
 |---|---|---|---|
 | Store | Append-only Git repositories, one per engagement plus one for the mechanism library, validated against JSON Schemas. This is the walking skeleton the spec prescribes (DEC-008, Q-020) | `src/store/` | A transactional store (for example SQLite) is a [deferred mechanism](../../framework-design-lab/design/harness-state-and-execution.md#deferred-mechanisms). It needs journal-consistent backup and the recovery scenarios before adoption |
 | Runner | The controller process runs one job at a time as a child process group it owns | `src/runner/` | Parallel or remote workers bring leases, heartbeats and fencing (deferred mechanisms) |
-| Sandbox | bubblewrap (`bwrap`): network, PID, IPC and UTS namespaces unshared, read-only system and toolchain binds, read-only target snapshot, per-attempt writable scratch, scrubbed environment. Execution is refused when `bwrap` is missing | `src/runner/sandbox.ts` | Any replacement must first demonstrate default-deny egress ([conformance](../../framework-design-lab/design/harness-interface-contracts.md#compatibility-and-conformance)) |
+| Sandbox | **Decided 2026-10-13: bubblewrap.** Network, PID, IPC and UTS namespaces unshared, read-only system and toolchain binds, read-only target snapshot, per-attempt writable scratch, scrubbed environment. Execution is refused when `bwrap` is missing | `src/runner/sandbox.ts` | Any replacement must first demonstrate default-deny egress ([conformance](../../framework-design-lab/design/harness-interface-contracts.md#compatibility-and-conformance)) |
 | Model provider | None configured. The provider broker enforces engagement approval, data classes, reservations and `outcome_unknown` accounting; a `FakeProvider` exists for tests only | `src/runner/provider.ts` | Register a provider adapter in the workspace configuration and approve it per engagement in `accept_scope_and_policy` |
 | Agent host | Not selected. A reference host (`reference_agent`) passes every conformance check. Claude Code was trialled as a candidate (`claude_code` adapter) and passes all five agent-tool conditions in terminal-wrapper mode: see [agent-host-trial.md](agent-host-trial.md) for the evidence and the caveats an operator must weigh. The capture channel works as a terminal wrapper (`harness capture`) and as a Claude Code `UserPromptSubmit` hook adapter (`harness capture-hook`) | `src/agents/`, `src/capture/`, `src/runner/` | Choose a host; for Claude Code, weigh the trial's caveats (headless or terminal-wrapper use only, synthesized streaming, dropped beta headers untested against a real provider) |
 | Numeric limits | No limit is hard-coded. Every work authorization carries finite spend, runtime, concurrency, child-task, round, retry, repair, output, memory and process limits; review, clarification and decision capacities are set in `accept_scope_and_policy` | `src/decision/work.ts`, `src/schema/records.ts` | The spec's proposed starting values (three investigations per batch, two concurrent agent workers, one heavy experiment, zero child tasks, two repairs per variant) are pilot settings for the operator to set |
