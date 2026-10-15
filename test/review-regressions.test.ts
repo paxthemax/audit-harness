@@ -269,4 +269,52 @@ test(
   }),
 );
 
+test(
+  "an agent's revision of its own investigation is rebased over the job dispatch recorded after its context was built; content changes still conflict",
+  withHarness((h) => {
+    const eid = 'e12';
+    const { inv } = admittedInvestigation(h, eid, { impact: 'medium' });
+    done(workerFor(h, eid, { kind: 'batch', role: 'investigator', investigation: inv, investigations: [inv] }));
+    // The challenger's context holds this revision; request_job then links the challenger's own job.
+    const seen = head(h, eid, inv.record_id);
+    const w = workerFor(h, eid, { kind: 'batch', role: 'challenger', investigation: seen, investigations: [seen] });
+    assert.ok(head(h, eid, inv.record_id).revision > seen.revision);
+    w.do(eid, 'submit_proposal', { kind: 'investigation', base: seen, body: { prerequisite_review: 'accepted' } });
+    const store = () => h.ws.store(eid, true);
+    assert.equal(store().mustHead(inv.record_id, 'investigation').body.proof_status.prerequisite_review, 'accepted');
+    assert.equal(store().heads('proposal_conflict').length, 0);
+    // A revision that changed content in between is a conflict, retained as before.
+    h.auditor.do(eid, 'submit_proposal', { kind: 'investigation', base: head(h, eid, inv.record_id), body: { next_check: 'measure the payout twice' } });
+    assert.throws(() => w.do(eid, 'submit_proposal', { kind: 'investigation', base: seen, body: { prerequisite_review: 'disputed' } }), code('revision_conflict'));
+    assert.equal(store().mustHead(inv.record_id, 'investigation').body.proof_status.prerequisite_review, 'accepted');
+    assert.equal(store().heads('proposal_conflict').length, 1);
+    done(w);
+  }),
+);
+
+test(
+  "an investigator's variant outcome is rebased over an experiment it requested earlier in the round; a recorded outcome still conflicts",
+  withHarness((h) => {
+    const eid = 'e13';
+    const { inv } = admittedInvestigation(h, eid, { impact: 'medium' });
+    const store = () => h.ws.store(eid, true);
+    const variant = h.auditor.do(eid, 'submit_proposal', {
+      kind: 'scenario_variant',
+      body: { investigation: { record_id: inv.record_id }, causal_sequence: ['deposit', 'withdraw twice'], setup_powers: [], expected_violation: 'paid twice', defeating_condition: 'nonReentrant' },
+    }).variant;
+    const w = workerFor(h, eid, { kind: 'batch', role: 'investigator', investigation: inv, investigations: [inv] });
+    // The round's context holds this revision; the agent then requests an experiment for the variant.
+    const seen = head(h, eid, variant.record_id);
+    const auth = store().heads('job').filter((j) => j.body.purpose === 'agent').sort((a, b) => a.record_id.localeCompare(b.record_id, 'en', { numeric: true })).at(-1)!.body.authorization;
+    const snap = store().heads('engagement')[0].body.active_snapshot!;
+    w.do(eid, 'request_job', { authorization: auth, purpose: 'experiment', adapter: 'agentcmd', snapshot: store().headRef(snap.record_id), investigation: head(h, eid, inv.record_id), variant: seen, args: {} });
+    assert.ok(head(h, eid, variant.record_id).revision > seen.revision, 'the experiment request linked the variant');
+    w.do(eid, 'submit_proposal', { kind: 'scenario_variant', base: seen, body: { outcome: 'supports' } });
+    assert.equal(store().mustHead(variant.record_id, 'scenario_variant').body.outcome, 'supports');
+    // Once an outcome is recorded, a proposal based before it conflicts.
+    assert.throws(() => w.do(eid, 'submit_proposal', { kind: 'scenario_variant', base: seen, body: { outcome: 'refuted', countercondition: { text: 'guard', evidence: [] } } }), code('revision_conflict'));
+    done(w);
+  }),
+);
+
 void LIMITS;

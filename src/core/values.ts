@@ -48,7 +48,36 @@ export const FIX_LABELS = [
   'not_assessed',
 ] as const;
 export const CLIENT_RESPONSES = ['fixed', 'partially_fixed', 'acknowledged', 'disputed', 'no_response'] as const;
-export const RATIONALE_AUTHORSHIP = ['human_written', 'agent_drafted_edited', 'agent_drafted_unedited'] as const;
+export const RATIONALE_AUTHORSHIP = ['human_written', 'agent_drafted_edited', 'agent_drafted_unedited', 'agent_unattended'] as const;
+
+/**
+ * Operator-requested deviation from the human-decision invariant (docs/operator-choices.md, 2026-10-14). An operator may
+ * delegate only these kinds, per engagement, to the unattended approver. `record_flow_review` lifts only the batch gate
+ * (FR-32): an unattended flow review marks no function reviewed and records a gap saying no human reviewed the flow.
+ * Audit judgments (dispositions, interpretations, premise revisions, exports) stay with the auditor, decided on the
+ * trusted screen or through an agent session.
+ */
+export const UNATTENDED_DECISION_KINDS = ['accept_scope_and_policy', 'authorize_work', 'record_flow_review'] as const;
+export type UnattendedDecisionKind = (typeof UNATTENDED_DECISION_KINDS)[number];
+/** Kinds `harness unattended enable` delegates when no `--kinds` is given: flow reviews must be named explicitly. */
+export const UNATTENDED_DEFAULT_KINDS: readonly UnattendedDecisionKind[] = ['accept_scope_and_policy', 'authorize_work'];
+/** The principal recorded as `actor` on a decision the unattended approver made. */
+export const UNATTENDED_PRINCIPAL = 'unattended-approver';
+/**
+ * The principal recorded as `actor` on a decision recorded through an agent session (`harness mcp`; operator decision
+ * 2026-10-14): an agent presented the item to the auditor and submitted the decision. Provenance is labelled, not
+ * proved: nothing binds the auditor's participation. The rationale authorship says who wrote the text.
+ */
+export const AGENT_SESSION_PRINCIPAL = 'agent-session';
+/**
+ * The principal of the yolo governor (`harness yolo run`, operator request 2026-10-14): trusted harness code that drives
+ * unattended discovery -> test -> report cycles on the controller channel. It may only request work and record its run
+ * (GOVERNOR_OPERATIONS in src/controller/controller.ts); its approvals go through the unattended approver.
+ */
+export const YOLO_GOVERNOR_PRINCIPAL = 'yolo-governor';
+/** `interrupted`: the governor's process ended without closing the run (recorded when the next run starts). */
+export const YOLO_RUN_STATUSES = ['running', 'completed', 'stopped', 'failed', 'interrupted'] as const;
+export type YoloRunStatus = (typeof YOLO_RUN_STATUSES)[number];
 export const STATEMENT_ORIGINS = [
   'documented_claim',
   'auditor_clarification',

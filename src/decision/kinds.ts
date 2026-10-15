@@ -59,15 +59,18 @@ defineDecisionKind({
     const ref = ctx.tx.revise(e.record_id, 'engagement', (b) => ({ ...b, policy, policy_decision: decision }));
     // The trusted-role premise is an adopted assumption the report must list (AR-15).
     const raised = policy.attacker_charter.raised_roles;
+    const unattended = payload.rationale_authorship === 'agent_unattended';
     const premise = ctx.tx.create(
       'system_statement',
       {
         kind: 'assumption',
         affiliation: 'shared',
         origin: 'adopted_assumption',
-        statement: policy.attacker_charter.privileged_roles_trusted
-          ? `${policy.trusted_role_premise}${raised.length ? ` Raised roles (not trusted): ${raised.join(', ')}.` : ''}`
-          : `Privileged roles are not trusted for this engagement. ${policy.trusted_role_premise}`,
+        statement:
+          (policy.attacker_charter.privileged_roles_trusted
+            ? `${policy.trusted_role_premise}${raised.length ? ` Raised roles (not trusted): ${raised.join(', ')}.` : ''}`
+            : `Privileged roles are not trusted for this engagement. ${policy.trusted_role_premise}`) +
+          (unattended ? ' [Adopted by the unattended approver; no human reviewed this premise.]' : ''),
         anchors: [],
         audit_units: [],
         captured_inputs: [],
@@ -76,7 +79,7 @@ defineDecisionKind({
         applicability: 'whole engagement',
         supporting: [],
         contradicting: [],
-        review_status: 'reviewed',
+        review_status: unattended ? 'provisional' : 'reviewed',
         owner: 'auditor',
       },
       [decision],
@@ -230,7 +233,11 @@ defineDecisionKind({
 });
 
 // -----------------------------------------------------------------------------------------------
-// record_flow_review (DEC-005; FR-32): the unit becomes `reviewed` at the active snapshot.
+// record_flow_review (DEC-005; FR-32): the unit becomes `reviewed` at the active snapshot. An unattended flow review
+// (operator opt-in) only lifts the batch gate: it marks no function reviewed and adds a gap saying no human reviewed it,
+// which a later human flow review of the unit clears.
+
+const UNATTENDED_REVIEW_GAP = 'Unattended flow review ';
 
 defineDecisionKind({
   kind: 'record_flow_review',
@@ -238,6 +245,9 @@ defineDecisionKind({
     const unit = ctx.store.get(need<Ref>(p.inputs, 'audit_unit'), 'audit_unit');
     reviewedIncludes(p, { record_id: unit.record_id, revision: unit.revision });
     if (unit.body.review_status === 'excluded') fail('invalid_request', 'an excluded unit is not reviewed');
+    if (p.rationale_authorship === 'agent_unattended' && ((p.inputs.reviewed_functions as string[] | undefined) ?? []).length) {
+      fail('permission_denied', 'the unattended approver cannot mark functions reviewed; only a human flow review does');
+    }
     if (!activeSnapshot(ctx.store)) fail('invalid_request', 'register a target snapshot before recording a flow review');
     for (const c of (p.inputs.comparisons as Ref[] | undefined) ?? []) {
       ctx.store.get(c, 'behavioral_comparison');
@@ -247,15 +257,22 @@ defineDecisionKind({
   apply({ ctx, payload, decision }) {
     const r = payload.inputs.audit_unit as Ref;
     const snapshot = activeSnapshot(ctx.store)!;
+    const unattended = payload.rationale_authorship === 'agent_unattended';
     const reviewedFns = new Set((payload.inputs.reviewed_functions as string[] | undefined) ?? []);
-    const gaps = (payload.inputs.gaps as string[] | undefined) ?? [];
-    const ref = ctx.tx.revise(r.record_id, 'audit_unit', (b) => ({
-      ...b,
-      review_status: 'reviewed',
-      reviewed_revision: { snapshot, decision },
-      functions: b.functions.map((f) => (reviewedFns.has(f.name) ? { ...f, reviewed: true } : f)),
-      gaps: [...b.gaps, ...gaps.filter((g) => !b.gaps.includes(g))],
-    }));
+    const gaps = [
+      ...((payload.inputs.gaps as string[] | undefined) ?? []),
+      ...(unattended ? [`${UNATTENDED_REVIEW_GAP}${decision.record_id} at ${refKey(snapshot)}: no human reviewed this flow`] : []),
+    ];
+    const ref = ctx.tx.revise(r.record_id, 'audit_unit', (b) => {
+      const kept = unattended ? b.gaps : b.gaps.filter((g) => !g.startsWith(UNATTENDED_REVIEW_GAP));
+      return {
+        ...b,
+        review_status: 'reviewed',
+        reviewed_revision: { snapshot, decision },
+        functions: b.functions.map((f) => (reviewedFns.has(f.name) ? { ...f, reviewed: true } : f)),
+        gaps: [...kept, ...gaps.filter((g) => !kept.includes(g))],
+      };
+    });
     return { audit_unit: ref, reviewed_at: snapshot };
   },
 });

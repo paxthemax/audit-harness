@@ -117,22 +117,26 @@ export function computeRequiredSet(store: RecordStore): RequiredSet {
   }
 
   // --- Coverage: every audit unit with review status and reviewed revision (generated) -----------
+  // A flow review by the unattended approver lifts the batch gate only: no human reviewed the unit, so it stays incomplete.
   const comparisonsByUnit = comparisonIndex(store);
   for (const u of store.heads('audit_unit')) {
     const status = u.body.review_status;
+    const rr = u.body.reviewed_revision;
+    const unattendedReview = status === 'reviewed' && rr !== null && store.get(rr.decision, 'human_decision').body.rationale_authorship === 'agent_unattended';
     const cmps = comparisonsByUnit.get(u.record_id) ?? [];
     add({
       key: `audit_unit:${u.record_id}`,
       ref: refOf(u),
       category: 'audit_unit',
       generated: true,
-      incomplete: status === 'not_started' || status === 'partial',
-      reason: `audit unit ${u.body.name}: ${status}`,
+      incomplete: status === 'not_started' || status === 'partial' || unattendedReview,
+      reason: `audit unit ${u.body.name}: ${unattendedReview ? 'reviewed by the unattended approver, not by a human' : status}`,
       detail: {
         name: u.body.name,
         kind: u.body.kind,
         review_status: status,
-        reviewed_revision: u.body.reviewed_revision,
+        unattended_review: unattendedReview,
+        reviewed_revision: rr,
         gaps: u.body.gaps,
         comparisons: cmps.map((c) => ({
           ref: refOf(c),

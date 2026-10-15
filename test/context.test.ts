@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeHarness, newEngagement, type Harness } from './helpers.ts';
 import { acceptPolicy, investigationBody, stage, stageSnapshot, statementBody, stageOne } from './report-fixtures.ts';
+import { admittedInvestigation, stageEvidence } from './decision-fixtures.ts';
 import { isHarnessError } from '../src/core/errors.ts';
 import type { Ref } from '../src/core/refs.ts';
 import type { ContextManifest } from '../src/context/builder.ts';
@@ -129,6 +130,23 @@ test('context for engagement A never includes engagement B records', () => {
     const text = JSON.stringify(manifestOf(h, f.a, r));
     assert.ok(!text.includes('BRAVO-ONLY'));
     assert.ok(!text.includes(f.b));
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("an investigation's context carries the trusted runner's results of its jobs, not the agent rounds' receipts", () => {
+  const h = makeHarness();
+  try {
+    const { eid, inv } = admittedInvestigation(h, 'eng-results');
+    const experiment = stageEvidence(h, eid, inv.record_id, 'experiment', 'error');
+    const replay = stageEvidence(h, eid, inv.record_id, 'replay', 'counterexample');
+    const round = stageEvidence(h, eid, inv.record_id, 'agent', 'inconclusive');
+    for (const role of ['investigator', 'challenger']) {
+      const ids = manifestOf(h, eid, h.auditor.do(eid, 'build_context', { role, investigation: inv })).records.map((r) => r.ref.record_id);
+      assert.ok(ids.includes(experiment.record_id) && ids.includes(replay.record_id), `${role} sees the experiment and replay results`);
+      assert.ok(!ids.includes(round.record_id), `${role} does not get agent-round receipts`);
+    }
   } finally {
     h.cleanup();
   }

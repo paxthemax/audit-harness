@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { makeHarness, newEngagement, type Harness } from './helpers.ts';
 import { isHarnessError } from '../src/core/errors.ts';
 import { git } from '../src/store/git.ts';
-import { commandAdapter, registerAdapter } from '../src/runner/adapters.ts';
+import { commandAdapter, foundryToolchain, registerAdapter } from '../src/runner/adapters.ts';
 import { onJobCompleted } from '../src/runner/hooks.ts';
 import { reconcileOnStart, runAuditorCommand, runJob, runQueue } from '../src/runner/runner.ts';
 import { FakeProvider, ProviderBroker } from '../src/runner/provider.ts';
@@ -127,6 +127,18 @@ test('expected-violation PoC: passing shows a counterexample, failing is not a c
     // forge exited 1 (a test failed) but the process completed: the status is not the result.
     assert.equal(failed.receipt!.exit_code, 1);
     assert.equal(s.mustHead(failed.attempt!.record_id, 'attempt').body.status, 'completed');
+  } finally {
+    h.cleanup();
+  }
+});
+
+test('the Foundry toolchain environment disables lint-on-build, offline and FFI', () => {
+  const h = makeHarness();
+  try {
+    const env = foundryToolchain(h.ws).env;
+    assert.equal(env.FOUNDRY_LINT_LINT_ON_BUILD, 'false');
+    assert.equal(env.FOUNDRY_OFFLINE, 'true');
+    assert.equal(env.FOUNDRY_FFI, 'false');
   } finally {
     h.cleanup();
   }

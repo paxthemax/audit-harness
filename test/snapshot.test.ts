@@ -186,6 +186,31 @@ test('vendored libraries are compared against prefetched upstream copies (FR-34)
   }
 });
 
+test('an upstream copy under a git-ignored directory (node_modules) is frozen and verified; other ignored content is not', () => {
+  const h = makeHarness();
+  try {
+    const eid = newEngagement(h);
+    const lib = 'pragma solidity 0.8.30;\nlibrary C { function f() internal pure returns (uint256) { return 1; } }\n';
+    const dir = join(h.dir, 'npmdep');
+    gitProject(dir, { 'foundry.toml': FOUNDRY_TOML, 'src/Vault.sol': vaultSource() });
+    writeFiles(dir, { '.gitignore': 'out/\ncache/\nnode_modules/\n', 'node_modules/@pkg/c/src/C.sol': lib, 'node_modules/junk/J.sol': lib });
+    const up = join(h.dir, 'upstream-c');
+    writeFiles(up, { 'src/C.sol': lib });
+    const r = register(h, eid, dir, 'npm dependency', {
+      upstream: { 'node_modules/@pkg/c': { path: up, name: '@pkg/c', version: '1.0.0', source: 'https://example.invalid/c' } },
+    });
+    const snap = head(h, eid, r.snapshot.record_id);
+    const files = h.ws.store(eid, true).archive.getTree(snap.body.tree.artifact).files;
+    assert.ok('node_modules/@pkg/c/src/C.sol' in files, 'the upstream-verified dependency is part of the frozen tree');
+    assert.ok(!('node_modules/junk/J.sol' in files), 'other ignored content stays out');
+    const dep = snap.body.vendored.find((v: any) => v.path === 'node_modules/@pkg/c');
+    assert.equal(dep.status, 'unmodified');
+    assert.ok(snap.body.limitations.some((l: string) => l.includes('git-ignored') && l.includes('node_modules/junk')));
+  } finally {
+    h.cleanup();
+  }
+});
+
 test('FR-17: guard removal makes the rejected lead affected; unchanged probes carry forward; unevaluable probes are possibly affected', () => {
   const h = makeHarness();
   try {

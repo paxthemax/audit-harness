@@ -1,9 +1,10 @@
+import { fail } from '../core/errors.ts';
 import { refKey, type Ref } from '../core/refs.ts';
 import { DEFAULT_ATTACKER_CHARTER } from '../core/values.ts';
 import type { AttackerCharter, EngagementPolicy, Limits, RecordEnvelope } from '../schema/records.ts';
 import { askList, askUntil, choose, confirmWord, heading, page, show } from './io.ts';
 import { recordLines, refText } from './render.ts';
-import type { DecisionOutcome, TrustedScreen } from './screen.ts';
+import type { DecisionOutcome, DecisionRequest, TrustedScreen } from './screen.ts';
 
 // Decision screens other than the review packet (design/harness-interface-contracts.md, "Human
 // decision kinds"; design/harness-auditor-guide.md). Each one renders the exact revisions the decision
@@ -11,7 +12,7 @@ import type { DecisionOutcome, TrustedScreen } from './screen.ts';
 // permitted aggregate is the labelled mechanical carry-forward attestation), then records the display
 // receipt and submits. A refusal shows what changed and offers a re-review against current revisions.
 
-const refOf = (e: RecordEnvelope): Ref => ({ record_id: e.record_id, revision: e.revision });
+export const refOf = (e: RecordEnvelope): Ref => ({ record_id: e.record_id, revision: e.revision });
 
 async function withRereview(screen: TrustedScreen, run: () => Promise<DecisionOutcome>): Promise<DecisionOutcome> {
   for (;;) {
@@ -165,6 +166,46 @@ function countBy(xs: string[]): string {
 // accept_scope_and_policy: narrow the default attacker charter; the trusted-role premise is shown as
 // an assumption. Policy fields come from a draft (`--draft policy.json`) and are all rendered.
 
+export const DEFAULT_TRUSTED_ROLE_PREMISE = 'Privileged roles are trusted unless raised.';
+/** Policy fields the controller requires before it accepts scope and policy. */
+export const MANDATORY_POLICY_FIELDS = ['scope', 'data_policy', 'retention', 'severity_rubric', 'rejection_listing_threshold', 'budget', 'evidence_policy', 'capacity', 'time_plan'] as const;
+
+/** The `accept_scope_and_policy` request for the engagement revision shown. */
+export function scopePolicyRequest(eng: RecordEnvelope<'engagement'>, policy: EngagementPolicy): DecisionRequest {
+  const charter = policy.attacker_charter;
+  return {
+    operation: 'record_decision',
+    decision_kind: 'accept_scope_and_policy',
+    reviewed: [refOf(eng)],
+    inputs: { policy },
+    agent_draft: null,
+    summary: [`Charter keeps ${charter.capabilities.length} capabilities, excludes ${charter.excluded.length}`, `Raised roles: ${charter.raised_roles.join(', ') || 'none'}`],
+  };
+}
+
+/**
+ * A policy from a draft without prompts (unattended approver, agent sessions): the draft must keep or exclude, with a
+ * reason, every default attacker capability; nothing is defaulted except the trusted-role premise text.
+ */
+export function policyFromDraft(draft: Partial<EngagementPolicy>): EngagementPolicy {
+  const base = draft.attacker_charter;
+  const kept = base ? base.capabilities : [...DEFAULT_ATTACKER_CHARTER.capabilities];
+  const excluded = base?.excluded ?? [];
+  if (!Array.isArray(kept) || !Array.isArray(excluded)) fail('invalid_request', 'the draft charter lists capabilities and excluded entries');
+  const unreasoned = excluded.filter((e) => !e || typeof e.reason !== 'string' || !e.reason.trim());
+  if (unreasoned.length) fail('invalid_request', `every excluded capability needs a reason; missing for: ${unreasoned.map((e) => e?.capability).join(', ')}`);
+  const unanswered = DEFAULT_ATTACKER_CHARTER.capabilities.filter((c) => !kept.includes(c) && !excluded.some((e) => e.capability === c));
+  if (unanswered.length) fail('invalid_request', `the draft charter must keep or exclude (with a reason) every default capability; unanswered: ${unanswered.join(', ')}`);
+  const charter: AttackerCharter = {
+    capabilities: kept,
+    excluded,
+    raised_roles: base?.raised_roles ?? [],
+    privileged_roles_trusted: base?.privileged_roles_trusted ?? true,
+    notes: base?.notes ?? null,
+  };
+  return { ...draft, attacker_charter: charter, trusted_role_premise: draft.trusted_role_premise ?? DEFAULT_TRUSTED_ROLE_PREMISE } as EngagementPolicy;
+}
+
 export async function acceptScopeAndPolicy(screen: TrustedScreen, draft: Partial<EngagementPolicy>): Promise<DecisionOutcome> {
   return withRereview(screen, async () => {
     screen.banner('Accept scope and policy');
@@ -189,7 +230,7 @@ export async function acceptScopeAndPolicy(screen: TrustedScreen, draft: Partial
     const extra = (base?.capabilities ?? []).filter((c) => !(DEFAULT_ATTACKER_CHARTER.capabilities as readonly string[]).includes(c));
     if (extra.length) show(screen.io, `Draft adds capabilities beyond the default: ${extra.join(', ')} (kept; they need a note)\n`);
     heading(screen.io, 'Trusted-role premise (an ASSUMPTION, printed in the report\'s assumptions section)');
-    show(screen.io, `  ${draft.trusted_role_premise ?? 'Privileged roles are trusted unless raised.'}\n`);
+    show(screen.io, `  ${draft.trusted_role_premise ?? DEFAULT_TRUSTED_ROLE_PREMISE}\n`);
     const raised = await askList(screen.io, `Roles you raise to attacker (not trusted)${base?.raised_roles?.length ? ` [draft: ${base.raised_roles.join(', ')}]` : ''}`);
     const charter: AttackerCharter = {
       capabilities: [...keep, ...extra],
@@ -198,7 +239,7 @@ export async function acceptScopeAndPolicy(screen: TrustedScreen, draft: Partial
       privileged_roles_trusted: base?.privileged_roles_trusted ?? true,
       notes: base?.notes ?? null,
     };
-    const policy = { ...draft, attacker_charter: charter, trusted_role_premise: draft.trusted_role_premise ?? 'Privileged roles are trusted unless raised.' } as EngagementPolicy;
+    const policy = { ...draft, attacker_charter: charter, trusted_role_premise: draft.trusted_role_premise ?? DEFAULT_TRUSTED_ROLE_PREMISE } as EngagementPolicy;
     heading(screen.io, 'Policy as it will be recorded');
     const lines = JSON.stringify(policy, null, 2).split('\n');
     show(screen.io, lines.slice(0, 60).join('\n') + '\n');
@@ -206,18 +247,9 @@ export async function acceptScopeAndPolicy(screen: TrustedScreen, draft: Partial
       await page(screen.io, lines, 'policy');
     }
     screen.log.opened('policy');
-    const missing = ['scope', 'data_policy', 'retention', 'severity_rubric', 'rejection_listing_threshold', 'budget', 'evidence_policy', 'capacity', 'time_plan'].filter(
-      (k) => (policy as unknown as Record<string, unknown>)[k] === undefined,
-    );
+    const missing = MANDATORY_POLICY_FIELDS.filter((k) => (policy as unknown as Record<string, unknown>)[k] === undefined);
     if (missing.length) screen.io.write(`UNRESOLVED mandatory fields (the controller refuses until supplied in the draft): ${missing.join(', ')}\n`);
-    return screen.decide({
-      operation: 'record_decision',
-      decision_kind: 'accept_scope_and_policy',
-      reviewed: [refOf(eng)],
-      inputs: { policy },
-      agent_draft: null,
-      summary: [`Charter keeps ${charter.capabilities.length} capabilities, excludes ${excluded.length}`, `Raised roles: ${charter.raised_roles.join(', ') || 'none'}`],
-    });
+    return screen.decide(scopePolicyRequest(eng, policy));
   });
 }
 
@@ -246,43 +278,93 @@ export function ledgerTotals(entries: RecordEnvelope<'ledger_entry'>[]): { spent
   return { spent, reserved: Math.max(0, reserved), uncertain };
 }
 
-const LIMIT_KEYS: (keyof Limits)[] = ['spend', 'runtime_seconds', 'concurrency', 'child_tasks', 'rounds', 'retries', 'repairs_per_variant', 'output_bytes', 'memory_mb', 'processes'];
+/** The `authorize_work` decision inputs, shared by the interactive screen and the unattended approver. */
+export function authorizeInputs(
+  prop: RecordEnvelope<'work_proposal'>,
+  kept: Ref[],
+  limits: Limits,
+  capabilities: { tools: string[]; providers: string[]; network: 'denied' | 'rpc_gateway' },
+  draft: AuthorizeDraft,
+): Record<string, unknown> {
+  return {
+    kind: prop.body.kind,
+    proposal: refOf(prop),
+    investigations: kept,
+    methods: prop.body.methods,
+    capabilities,
+    limits,
+    validity: draft.validity ?? null,
+    interrupt_conditions: draft.interrupt_conditions ?? [],
+    ...(draft.attacker_charter ? { attacker_charter: draft.attacker_charter } : {}),
+    ...(draft.audit_units ? { audit_units: draft.audit_units } : {}),
+  };
+}
+
+export const LIMIT_KEYS: (keyof Limits)[] = ['spend', 'runtime_seconds', 'concurrency', 'child_tasks', 'rounds', 'retries', 'repairs_per_variant', 'output_bytes', 'memory_mb', 'processes'];
+
+/**
+ * The authorization view: the proposal, spending, lead-generator coverage, gaps and each investigation it binds (with a
+ * note when one changed since the proposal). Yields each investigation right after it is shown; the view is complete
+ * (the investigations section recorded as opened) once the iteration ends.
+ */
+export function* showWorkProposal(screen: TrustedScreen, prop: RecordEnvelope<'work_proposal'>): Generator<RecordEnvelope<'investigation'>, void, undefined> {
+  screen.banner(`Authorize work: proposal ${prop.record_id}@${prop.revision} (${prop.body.kind})`);
+  screen.render(prop);
+  screen.log.opened('proposal');
+  const eng = screen.heads('engagement')[0];
+  const unit = eng.body.policy?.budget.unit ?? 'budget units';
+  const t = ledgerTotals(screen.heads('ledger_entry'));
+  heading(screen.io, 'Spending (from ledger entries)');
+  screen.io.write(`  Spent: ${t.spent} ${unit}\n  Reserved: ${t.reserved} ${unit}\n  Uncertain: ${t.uncertain} ${unit}\n  Engagement budget: ${eng.body.policy ? eng.body.policy.budget.total : 'not set (scope and policy not accepted)'}\n`);
+  const ready = screen.heads('investigation').filter((i) => i.body.work_state === 'ready_for_review').length;
+  screen.io.write(`  Review queue: ${ready} packet(s) waiting; capacity ${eng.body.policy?.capacity.review_queue ?? 'not set'}\n`);
+  heading(screen.io, 'Lead-generator coverage per unit');
+  for (const c of prop.body.lead_generator_coverage) {
+    show(screen.io, `  ${refText(c.audit_unit)}: ${c.generators.map((g) => `${g.generator}=${g.status}`).join(', ') || 'no lead generator has run'}\n`);
+  }
+  screen.io.write(`  Includes a high-value multi-step or cross-flow question: ${prop.body.includes_multistep_question ? 'yes' : 'NO'}\n`);
+  if (prop.body.gaps.length) {
+    heading(screen.io, 'Gaps');
+    for (const g of prop.body.gaps) show(screen.io, `  - ${g}\n`);
+  }
+  heading(screen.io, 'Investigations: keep or remove each');
+  for (const r of prop.body.investigations) {
+    const inv = screen.head<'investigation'>(r.record_id);
+    screen.render(inv);
+    if (inv.revision !== r.revision) show(screen.io, `  CHANGED since the proposal: proposal bound revision ${r.revision}, current ${inv.revision}\n`);
+    yield inv;
+  }
+  screen.log.opened('investigations');
+}
+
+/** The `authorize_work` request for the kept investigations; capabilities default to the proposal's request. */
+export function authorizeRequest(prop: RecordEnvelope<'work_proposal'>, kept: Ref[], limits: Limits, draft: AuthorizeDraft): DecisionRequest {
+  const capabilities = draft.capabilities ?? {
+    tools: prop.body.requested_capabilities.tools,
+    providers: prop.body.requested_capabilities.providers,
+    network: prop.body.requested_capabilities.network,
+  };
+  return {
+    operation: 'authorize_work',
+    decision_kind: 'authorize_work',
+    reviewed: [refOf(prop), ...kept],
+    inputs: authorizeInputs(prop, kept, limits, capabilities, draft),
+    agent_draft: null,
+    summary: [`Admit ${kept.length} of ${prop.body.investigations.length} investigation(s): ${kept.map(refKey).join(', ') || 'none'}`, `Limits: ${JSON.stringify(limits)}`],
+  };
+}
 
 export async function authorizeWork(screen: TrustedScreen, proposalId: string, draft: AuthorizeDraft): Promise<DecisionOutcome> {
   return withRereview(screen, async () => {
     const prop = screen.head<'work_proposal'>(proposalId);
-    screen.banner(`Authorize work: proposal ${prop.record_id}@${prop.revision} (${prop.body.kind})`);
-    screen.render(prop);
-    screen.log.opened('proposal');
-    const eng = screen.heads('engagement')[0];
-    const unit = eng.body.policy?.budget.unit ?? 'budget units';
-    const t = ledgerTotals(screen.heads('ledger_entry'));
-    heading(screen.io, 'Spending (from ledger entries)');
-    screen.io.write(`  Spent: ${t.spent} ${unit}\n  Reserved: ${t.reserved} ${unit}\n  Uncertain: ${t.uncertain} ${unit}\n  Engagement budget: ${eng.body.policy ? eng.body.policy.budget.total : 'not set (scope and policy not accepted)'}\n`);
-    const ready = screen.heads('investigation').filter((i) => i.body.work_state === 'ready_for_review').length;
-    screen.io.write(`  Review queue: ${ready} packet(s) waiting; capacity ${eng.body.policy?.capacity.review_queue ?? 'not set'}\n`);
-    heading(screen.io, 'Lead-generator coverage per unit');
-    for (const c of prop.body.lead_generator_coverage) {
-      show(screen.io, `  ${refText(c.audit_unit)}: ${c.generators.map((g) => `${g.generator}=${g.status}`).join(', ') || 'no lead generator has run'}\n`);
-    }
-    screen.io.write(`  Includes a high-value multi-step or cross-flow question: ${prop.body.includes_multistep_question ? 'yes' : 'NO'}\n`);
-    if (prop.body.gaps.length) {
-      heading(screen.io, 'Gaps');
-      for (const g of prop.body.gaps) show(screen.io, `  - ${g}\n`);
-    }
-    heading(screen.io, 'Investigations: keep or remove each');
     const kept: Ref[] = [];
-    for (const r of prop.body.investigations) {
-      const inv = screen.head<'investigation'>(r.record_id);
-      screen.render(inv);
-      if (inv.revision !== r.revision) show(screen.io, `  CHANGED since the proposal: proposal bound revision ${r.revision}, current ${inv.revision}\n`);
+    for (const inv of showWorkProposal(screen, prop)) {
       const k = await choose(screen.io, `Admit ${inv.record_id}`, [
         { key: 'y', value: 'y', label: 'admit in this batch' },
         { key: 'n', value: 'n', label: 'remove from this batch' },
       ]);
       if (k === 'y') kept.push(refOf(inv));
     }
-    screen.log.opened('investigations');
     heading(screen.io, 'Finite resource limits (operator choices; nothing is defaulted)');
     const limits = {} as Limits;
     for (const k of LIMIT_KEYS) {
@@ -292,32 +374,11 @@ export async function authorizeWork(screen: TrustedScreen, proposalId: string, d
       );
       limits[k] = a === '' ? (d as number) : Number(a);
     }
-    const capabilities = draft.capabilities ?? {
-      tools: prop.body.requested_capabilities.tools,
-      providers: prop.body.requested_capabilities.providers,
-      network: prop.body.requested_capabilities.network,
-    };
+    const req = authorizeRequest(prop, kept, limits, draft);
+    const capabilities = req.inputs.capabilities as { tools: string[]; providers: string[]; network: string };
     show(screen.io, `Capabilities: tools ${capabilities.tools.join(', ') || 'none'}; providers ${capabilities.providers.join(', ') || 'none'}; network ${capabilities.network}\n`);
     if (draft.validity) show(screen.io, `Standing charter validity: ${draft.validity.from} to ${draft.validity.until}\n`);
-    return screen.decide({
-      operation: 'authorize_work',
-      decision_kind: 'authorize_work',
-      reviewed: [refOf(prop), ...kept],
-      inputs: {
-        kind: prop.body.kind,
-        proposal: refOf(prop),
-        investigations: kept,
-        methods: prop.body.methods,
-        capabilities,
-        limits,
-        validity: draft.validity ?? null,
-        interrupt_conditions: draft.interrupt_conditions ?? [],
-        ...(draft.attacker_charter ? { attacker_charter: draft.attacker_charter } : {}),
-        ...(draft.audit_units ? { audit_units: draft.audit_units } : {}),
-      },
-      agent_draft: null,
-      summary: [`Admit ${kept.length} of ${prop.body.investigations.length} investigation(s): ${kept.map(refKey).join(', ') || 'none'}`, `Limits: ${JSON.stringify(limits)}`],
-    });
+    return screen.decide(req);
   });
 }
 
@@ -325,44 +386,55 @@ export async function authorizeWork(screen: TrustedScreen, proposalId: string, d
 // record_flow_review: the DESIGNED/IMPLEMENTED comparison of one flow, its gaps and assumptions.
 // Rendering IMPLEMENTED statements records the unit's first presentation (intent timing).
 
+/** The flow-review view: the unit, its DESIGNED / IMPLEMENTED / SHARED statements, correspondences and comparisons. */
+export function showFlowReview(screen: TrustedScreen, unit: RecordEnvelope<'audit_unit'>): RecordEnvelope<'behavioral_comparison'>[] {
+  screen.banner(`Flow review: ${unit.record_id}@${unit.revision}`);
+  screen.render(unit);
+  screen.log.opened('unit');
+  const corrs = screen.heads('behavioral_correspondence').filter((c) => c.body.audit_unit.record_id === unit.record_id);
+  const stmts = screen.heads('system_statement').filter((s) => s.body.audit_units.some((u) => u.record_id === unit.record_id));
+  for (const side of ['designed', 'implemented', 'shared'] as const) {
+    heading(screen.io, side.toUpperCase());
+    const list = stmts.filter((s) => s.body.affiliation === side);
+    if (!list.length) screen.io.write('  (none recorded)\n');
+    for (const s of list) screen.render(s);
+  }
+  screen.log.opened('designed_implemented');
+  for (const c of corrs) screen.render(c);
+  const cmps = screen.heads('behavioral_comparison').filter((c) => c.body.correspondences.some((r) => corrs.some((x) => x.record_id === r.record_id)));
+  heading(screen.io, 'Comparisons');
+  if (!cmps.length) screen.io.write('  (none recorded)\n');
+  for (const c of cmps) {
+    screen.render(c);
+    if (c.body.relied_intent_timing.includes('after_walkthrough')) screen.io.write('  TAG: relies on after_walkthrough intent\n');
+  }
+  screen.log.opened('comparisons');
+  return cmps;
+}
+
+/** The `record_flow_review` request binding the unit and the comparisons that were shown. */
+export function flowReviewRequest(unit: RecordEnvelope<'audit_unit'>, cmps: RecordEnvelope<'behavioral_comparison'>[], gaps: string[], reviewedFns: string[]): DecisionRequest {
+  return {
+    operation: 'record_decision',
+    decision_kind: 'record_flow_review',
+    reviewed: [refOf(unit), ...cmps.map(refOf)],
+    inputs: { audit_unit: refOf(unit), comparisons: cmps.map(refOf), gaps, reviewed_functions: reviewedFns },
+    agent_draft: null,
+    summary: [`Unit ${unit.record_id} becomes reviewed at the active snapshot`, `Comparisons: ${cmps.length}; gaps added: ${gaps.length}; functions reviewed: ${reviewedFns.length}`],
+  };
+}
+
 export async function recordFlowReview(screen: TrustedScreen, unitId: string): Promise<DecisionOutcome> {
   return withRereview(screen, async () => {
     const unit = screen.head<'audit_unit'>(unitId);
-    screen.banner(`Flow review: ${unit.record_id}@${unit.revision}`);
-    screen.render(unit);
-    screen.log.opened('unit');
-    const corrs = screen.heads('behavioral_correspondence').filter((c) => c.body.audit_unit.record_id === unit.record_id);
-    const stmts = screen.heads('system_statement').filter((s) => s.body.audit_units.some((u) => u.record_id === unit.record_id));
-    for (const side of ['designed', 'implemented', 'shared'] as const) {
-      heading(screen.io, side.toUpperCase());
-      const list = stmts.filter((s) => s.body.affiliation === side);
-      if (!list.length) screen.io.write('  (none recorded)\n');
-      for (const s of list) screen.render(s);
-    }
-    screen.log.opened('designed_implemented');
-    for (const c of corrs) screen.render(c);
-    const cmps = screen.heads('behavioral_comparison').filter((c) => c.body.correspondences.some((r) => corrs.some((x) => x.record_id === r.record_id)));
-    heading(screen.io, 'Comparisons');
-    if (!cmps.length) screen.io.write('  (none recorded)\n');
-    for (const c of cmps) {
-      screen.render(c);
-      if (c.body.relied_intent_timing.includes('after_walkthrough')) screen.io.write('  TAG: relies on after_walkthrough intent\n');
-    }
-    screen.log.opened('comparisons');
+    const cmps = showFlowReview(screen, unit);
     const gaps = await askList(screen.io, 'Gaps you record for this flow');
     const fns = unit.body.functions.filter((f) => !f.reviewed);
     const reviewedFns: string[] = [];
     for (const f of fns) {
       if ((await choose(screen.io, `Did you review ${f.name}?`, [{ key: 'y', value: 'y', label: 'yes' }, { key: 'n', value: 'n', label: 'no (stays an open gap)' }])) === 'y') reviewedFns.push(f.name);
     }
-    return screen.decide({
-      operation: 'record_decision',
-      decision_kind: 'record_flow_review',
-      reviewed: [refOf(unit), ...cmps.map(refOf)],
-      inputs: { audit_unit: refOf(unit), comparisons: cmps.map(refOf), gaps, reviewed_functions: reviewedFns },
-      agent_draft: null,
-      summary: [`Unit ${unit.record_id} becomes reviewed at the active snapshot`, `Comparisons: ${cmps.length}; gaps added: ${gaps.length}; functions reviewed: ${reviewedFns.length}`],
-    });
+    return screen.decide(flowReviewRequest(unit, cmps, gaps, reviewedFns));
   });
 }
 

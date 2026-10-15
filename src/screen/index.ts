@@ -10,22 +10,42 @@ export {
   reviewPacket,
   collectPacketDecision,
   disposeInputs,
+  packetDecisionFromInputs,
+  packetDecisionRequest,
+  packetTemplate,
+  printSection,
   PACKET_SECTIONS,
   EVIDENCE_FIRST,
   REQUIRED_BEFORE_DECIDING,
   type PacketModel,
   type PacketSectionId,
 } from './packet.ts';
-export { collectDisposition, collectImpact, parseRefs, DISPOSITION_HELP } from './disposition.ts';
+export { collectDisposition, collectImpact, dispositionFromDecision, dispositionTemplate, parseRefs, DISPOSITION_FIELDS, DISPOSITION_HELP } from './disposition.ts';
 export {
   acceptScopeAndPolicy,
   answerClarification,
   approveExport,
   attestCarryForward,
+  authorizeRequest,
   authorizeWork,
   confirmInterpretations,
+  flowReviewRequest,
   genericDecision,
   ledgerTotals,
+  policyFromDraft,
   recordFlowReview,
+  scopePolicyRequest,
+  showFlowReview,
+  showWorkProposal,
 } from './flows.ts';
 export { freezeEvaluationContract, adoptMethodVersion, evaluationOf, type FreezeOutcome } from './library.ts';
+export {
+  acceptScopeAndPolicyUnattended,
+  authorizeWorkUnattended,
+  isUnattendedKind,
+  openUnattendedScreen,
+  recordFlowReviewUnattended,
+  silentIO,
+  type FlowReviewDraft,
+  type SilentIO,
+} from './unattended.ts';

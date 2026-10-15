@@ -7,6 +7,7 @@ import type { RecordStore } from '../store/recordStore.ts';
 import type { RecordEnvelope, RecordType } from '../schema/records.ts';
 import { retrieveLessons, type RetrievedLesson } from '../library/lessons.ts';
 import { retrieveMechanisms, type RetrievedMechanism } from '../library/library.ts';
+import { linkedEvidence } from '../decision/packets.ts';
 import { engagementHead, freshnessIndex, refOf } from '../report/derive.ts';
 import { stripSolidityComments } from './solidity.ts';
 
@@ -133,6 +134,12 @@ export function buildContext(store: RecordStore, library: RecordStore | null, ar
     }
     for (const a of inv.body.anchors) pathFiles.add(a.path);
     for (const v of inv.body.variants) want(store.headRef(v.record_id));
+    // What the trusted runner observed for its experiments, replays and controls (not the agent rounds' own
+    // receipts): an agent continuing the investigation, or challenging it, reads the results it builds on.
+    for (const e of linkedEvidence(store, inv.record_id)) {
+      const job = e.body.job ? store.tryGet<'job'>(e.body.job) : undefined;
+      if (job?.body.purpose !== 'agent') want(refOf(e));
+    }
     for (const r of [...inv.body.supporting, ...inv.body.refuting]) if (!isArtifactRef(r) && !r.scope && store.tryGet(r)) want(r);
     for (const pr of store.heads('property')) if (pr.body.investigation?.record_id === inv.record_id) want(refOf(pr));
     // Statements on the path: same audit units or same cited files.

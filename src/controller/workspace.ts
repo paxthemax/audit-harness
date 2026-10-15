@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, wr
 import { join, resolve } from 'node:path';
 import { fail } from '../core/errors.ts';
 import { randomToken, sha256Hex } from '../core/hash.ts';
+import { UNATTENDED_DECISION_KINDS, type UnattendedDecisionKind } from '../core/values.ts';
 import { timingSafeEqual } from 'node:crypto';
 import { withLock } from '../store/lock.ts';
 import { RecordStore } from '../store/recordStore.ts';
@@ -25,6 +26,8 @@ export interface WorkspaceConfig {
   tools: { forge: string | null };
   /** Provider policy (operator choice). No real provider is configured by default. */
   providers: ProviderConfig[];
+  /** Opt-in unattended approval, per engagement: the decision kinds the unattended approver may record. Absent = off. */
+  unattended_approval?: Record<string, { kinds: UnattendedDecisionKind[]; enabled_at: string }>;
 }
 
 export interface ProviderConfig {
@@ -99,6 +102,34 @@ export class Workspace {
   engagementDir(id: string): string {
     if (!ENGAGEMENT_ID.test(id) || id === 'library') fail('invalid_request', `invalid engagement id ${JSON.stringify(id)}`);
     return join(this.root, 'engagements', id);
+  }
+
+  /**
+   * Decision kinds the operator delegated to the unattended approver for an engagement. Read from harness.json on
+   * every call, so disabling takes effect for the next decision; empty (the default) means off.
+   */
+  unattendedKinds(engagement: string): UnattendedDecisionKind[] {
+    const cfg = JSON.parse(readFileSync(join(this.root, 'harness.json'), 'utf8')) as WorkspaceConfig;
+    const kinds = cfg.unattended_approval?.[engagement]?.kinds ?? [];
+    return kinds.filter((k) => (UNATTENDED_DECISION_KINDS as readonly string[]).includes(k));
+  }
+
+  /** Operator action: delegate (or, with null, withdraw) unattended approval for an engagement. */
+  setUnattended(engagement: string, kinds: UnattendedDecisionKind[] | null, enabledAt: string): void {
+    if (!this.hasEngagement(engagement)) fail('not_found', `no engagement ${engagement}`);
+    for (const k of kinds ?? []) {
+      if (!(UNATTENDED_DECISION_KINDS as readonly string[]).includes(k)) {
+        fail('invalid_request', `${k} cannot be delegated; allowed kinds: ${UNATTENDED_DECISION_KINDS.join(', ')}`);
+      }
+    }
+    const path = join(this.root, 'harness.json');
+    const cfg = JSON.parse(readFileSync(path, 'utf8')) as WorkspaceConfig;
+    const table = { ...(cfg.unattended_approval ?? {}) };
+    if (kinds && kinds.length) table[engagement] = { kinds: [...new Set(kinds)], enabled_at: enabledAt };
+    else delete table[engagement];
+    if (Object.keys(table).length) cfg.unattended_approval = table;
+    else delete cfg.unattended_approval;
+    writeFileSync(path, JSON.stringify(cfg, null, 2) + '\n');
   }
 
   hasEngagement(id: string): boolean {

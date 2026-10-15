@@ -142,7 +142,7 @@ export function stageEvidence(
   h: Harness,
   eid: string,
   inv: string,
-  purpose: 'experiment' | 'replay' | 'positive_control',
+  purpose: 'experiment' | 'replay' | 'positive_control' | 'agent',
   result: StructuredResult['result_type'],
 ): Ref {
   const store = h.ws.store(eid, true);

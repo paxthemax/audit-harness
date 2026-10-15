@@ -226,6 +226,8 @@ export function foundryToolchain(ws: Workspace): Toolchain {
       FOUNDRY_OFFLINE: 'true',
       FOUNDRY_FFI: 'false',
       FOUNDRY_DISABLE_NIGHTLY_WARNING: '1',
+      // Lint is not audit evidence, and its resolver can fail a build the compiler accepts (mento-core, forge 1.7.0).
+      FOUNDRY_LINT_LINT_ON_BUILD: 'false',
     },
     limitations,
   };
@@ -500,6 +502,18 @@ function counterexampleSteps(ce: unknown): string[] | null {
 
 type Campaign = NonNullable<StructuredResult['campaign']>;
 
+/** Proposed bound on the compiler output a failed run's result carries: enough for an agent to repair its fixture. */
+const PROPOSED_COMPILER_OUTPUT_CHARS = 4000;
+/** A build that failed before any test ran: compiler errors, or forge's own refusal (`Error: Found incompatible versions`). */
+const BUILD_FAILURE = /Compiler run failed|Error \(\d+\)|ParserError|TypeError|DeclarationError|^Error: /m;
+
+/** The build diagnostics in forge's stderr, from the first error on, bounded. */
+function compilerErrors(stderr: string): string {
+  const at = stderr.search(BUILD_FAILURE);
+  const text = stderr.slice(Math.max(0, at)).replace(/\x1b\[[0-9;]*m/g, '').trim();
+  return text.length > PROPOSED_COMPILER_OUTPUT_CHARS ? `${text.slice(0, PROPOSED_COMPILER_OUTPUT_CHARS)} [truncated]` : text;
+}
+
 export function interpretForgeTest(obs: Observation): Interpretation {
   const abnormal = abnormalEnd(obs);
   if (abnormal) return abnormal;
@@ -515,9 +529,9 @@ export function interpretForgeTest(obs: Observation): Interpretation {
   }
   const parsed = doc.parsed;
   if (!parsed) {
-    if (/Compiler run failed|Error \(\d+\)|ParserError|TypeError|DeclarationError/.test(obs.stderr)) {
+    if (BUILD_FAILURE.test(obs.stderr)) {
       return {
-        result: result('error', mode, 'compilation failed; no test ran, so this is not evidence either way'),
+        result: result('error', mode, `compilation failed; no test ran, so this is not evidence either way. Compiler output: ${compilerErrors(obs.stderr)}`),
         failed: 'compilation failed',
         limitations: [],
         missing: [],

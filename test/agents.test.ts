@@ -146,3 +146,35 @@ test('a broker refusal or an uncertain outcome ends the round without retrying',
     s2.cleanup();
   }
 });
+
+test('record ids the agent writes become exact references at the revision its context holds', async () => {
+  const s = setup('challenger', [
+    {
+      content: [
+        { type: 'tool_use', id: 'c1', name: 'record_prerequisite_review', input: { investigation: 'inv-0001', prerequisite_review: 'accepted' } },
+        { type: 'tool_use', id: 'c2', name: 'record_prerequisite_review', input: { investigation: { record_id: 'inv-0001' }, prerequisite_review: 'accepted' } },
+        { type: 'tool_use', id: 'c3', name: 'record_prerequisite_review', input: { investigation: 'inv-0001@2', prerequisite_review: 'disputed' } },
+        { type: 'tool_use', id: 'c4', name: 'review_setup_powers', input: { variant: 'var-0099', status: 'accepted' } },
+      ],
+      stop_reason: 'tool_use',
+      model: 'fake-model',
+    },
+    { content: [{ type: 'text', text: 'Reviewed.' }], stop_reason: 'end_turn', model: 'fake-model' },
+  ]);
+  await s.start();
+  try {
+    await runRound(s.env);
+    const base = (f: string) => JSON.parse(readFileSync(join(s.env.outboxDir, f), 'utf8')).payload.base;
+    assert.deepEqual(base('001-record_prerequisite_review.json'), { record_id: 'inv-0001', revision: 3 });
+    assert.deepEqual(base('002-record_prerequisite_review.json'), { record_id: 'inv-0001', revision: 3 });
+    assert.deepEqual(base('003-record_prerequisite_review.json'), { record_id: 'inv-0001', revision: 2 }, 'an explicit revision is kept');
+    // A record outside the context is refused to the agent at once, and nothing is queued for it.
+    assert.equal(readdirSync(s.env.outboxDir).length, 3);
+    const results = s.requests[1].body.messages.at(-1).content;
+    assert.equal(results[3].is_error, true);
+    assert.match(results[3].content, /var-0099 is not in this context/);
+  } finally {
+    await s.stop();
+    s.cleanup();
+  }
+});

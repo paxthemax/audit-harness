@@ -20,6 +20,7 @@ import './context/builder.ts';
 import './evaluation/index.ts';
 import './runner/index.ts';
 import './snapshot/index.ts';
+import './yolo/ops.ts';
 
 export { Controller, Session, defineOperation, operationNames } from './controller/controller.ts';
 export { Workspace } from './controller/workspace.ts';

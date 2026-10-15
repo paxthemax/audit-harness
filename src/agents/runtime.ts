@@ -103,7 +103,8 @@ export class Toolbox {
 
   constructor(env: RuntimeEnv, task: AgentTask, manifest: ContextManifest) {
     this.env = env;
-    this.task = task;
+    // Tools make the agent's record references exact with the revisions this context holds.
+    this.task = { ...task, revisions: Object.fromEntries(manifest.records.map((r) => [r.ref.record_id, r.ref.revision])) };
     this.manifest = manifest;
     this.tools = toolsFor(env.role);
   }
@@ -144,7 +145,9 @@ export class Toolbox {
       ].join('\n');
     }
     if (name === 'read_record') {
-      const r = this.manifest.records.find((x) => x.ref.record_id === input.record_id);
+      // Agents often name a record as id@revision; the context holds one revision of each record.
+      const id = String(input.record_id ?? '').split('@')[0];
+      const r = this.manifest.records.find((x) => x.ref.record_id === id);
       if (!r) return `record ${input.record_id} is not in this context`;
       return clip(JSON.stringify(r, null, 2));
     }
@@ -168,7 +171,7 @@ function clip(s: string): string {
 
 function summarize(body: unknown): string {
   const b = body as Record<string, unknown>;
-  const pick = b.question ?? b.statement ?? b.name ?? b.issue ?? b.claim ?? b.mechanism ?? b.expected_violation ?? '';
+  const pick = b.question ?? b.statement ?? b.name ?? b.issue ?? b.claim ?? b.mechanism ?? b.expected_violation ?? b.description ?? '';
   return String(pick).replace(/\s+/g, ' ').slice(0, 200);
 }
 

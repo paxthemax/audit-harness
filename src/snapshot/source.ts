@@ -316,6 +316,9 @@ export function freezeSource(archive: Archive, input: FreezeInput): FrozenSource
   }
   const depRoots = [...config.libs.map(strip), ...Object.keys(input.upstream ?? {}).map(strip)];
   const underDep = (rel: string) => depRoots.some((d) => rel === d || rel.startsWith(d + '/'));
+  // A directory on the way to a dependency root (node_modules for node_modules/@scope/pkg) must be walked even when
+  // ignored; its other contents are still excluded one by one.
+  const leadsToDep = (rel: string) => depRoots.some((d) => d.startsWith(rel + '/'));
   const excludedIgnored: string[] = [];
   const isIgnored = (rel: string) =>
     ignored.some((g) => (g.endsWith('/') ? rel === g.slice(0, -1) || rel.startsWith(g) : rel === g));
@@ -326,7 +329,7 @@ export function freezeSource(archive: Archive, input: FreezeInput): FrozenSource
     if (buildDirs.has(rel) || (buildDirs.has(first) && rel === first)) return false;
     if (isGit) {
       if (untrackedSet.has(rel) && !includeUntracked(rel)) return false;
-      if (isIgnored(rel) && !underDep(rel)) {
+      if (isIgnored(rel) && !underDep(rel) && !leadsToDep(rel)) {
         excludedIgnored.push(rel);
         return false;
       }

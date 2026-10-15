@@ -1,17 +1,18 @@
 import { fail, HarnessError } from '../core/errors.ts';
 import { digestJson } from '../core/hash.ts';
 import { isArtifactRef, refKey, type AnyRef, type Ref } from '../core/refs.ts';
-import type { DecisionKind, RationaleAuthorship } from '../core/values.ts';
-import { RATIONALE_AUTHORSHIP } from '../core/values.ts';
+import type { DecisionKind, RationaleAuthorship, UnattendedDecisionKind } from '../core/values.ts';
+import { RATIONALE_AUTHORSHIP, UNATTENDED_PRINCIPAL } from '../core/values.ts';
 import { defineOperation, type OpContext } from '../controller/controller.ts';
 import type { RecordStore } from '../store/recordStore.ts';
 import type { RecordEnvelope } from '../schema/records.ts';
 
-// Human decisions (design/harness-interface-contracts.md, "Human decision kinds";
+// Decisions (design/harness-interface-contracts.md, "Human decision kinds";
 // design/harness-state-and-execution.md, "Write and approval protocol").
 //
-// Every decision arrives on the trusted-screen channel with: the exact revisions the auditor reviewed,
-// a display receipt showing the screen rendered them, a rationale and its authorship. The controller
+// Every decision arrives on the screen channel (the interactive trusted decision screen, an agent session presenting
+// the item to the auditor, or the operator-enabled unattended approver; the principal tells them apart) with: the
+// exact revisions reviewed, a display receipt showing they were rendered, a rationale and its authorship. The controller
 // recomputes the dependency digest (and, for packets, the inbound-link digest and evidence
 // watermark) itself; stale inputs are refused with `stale_dependency`, missing displays with
 // `display_required`. Unreviewed agent statements in the dependency closure are listed and the
@@ -170,7 +171,7 @@ export function loadReceipt(ctx: OpContext, r: Ref): RecordEnvelope<'display_rec
   const env = ctx.store.tryGet<'display_receipt'>(r);
   if (!env || env.type !== 'display_receipt') fail('display_required', 'the decision cites no valid display receipt');
   if (env.created_by.channel !== 'screen') {
-    fail('display_required', 'decisions need a display receipt from the trusted decision screen');
+    fail('display_required', 'decisions need a display receipt from the screen channel (the trusted decision screen or an agent session)');
   }
   return env;
 }
@@ -244,10 +245,19 @@ defineOperation<DecisionPayload>({
  * names (authorize_work, revise_premise, approve_export).
  */
 export function commitDecision(ctx: OpContext, p: DecisionPayload, def: DecisionKindDef): Record<string, unknown> {
-  if (ctx.principal.channel !== 'screen') fail('permission_denied', 'human decisions come only from the trusted decision screen');
+  if (ctx.principal.channel !== 'screen') fail('permission_denied', 'decisions come only from the screen channel (the trusted decision screen or an agent session)');
   if (!Array.isArray(p.reviewed)) fail('invalid_request', 'reviewed must list the exact revisions reviewed');
   if (!p.rationale || !p.rationale.trim()) fail('invalid_request', 'a rationale is required');
   if (!RATIONALE_AUTHORSHIP.includes(p.rationale_authorship)) fail('invalid_request', 'rationale_authorship is required');
+  // Unattended approval is a closed pair: only its own principal may claim `agent_unattended`, and that principal may
+  // not claim anything else. It reaches only the kinds the operator delegated for this engagement.
+  const unattended = ctx.principal.principal === UNATTENDED_PRINCIPAL;
+  if (unattended !== (p.rationale_authorship === 'agent_unattended')) {
+    fail('permission_denied', 'agent_unattended authorship belongs to the unattended approver, and only to it');
+  }
+  if (unattended && !ctx.ws.unattendedKinds(ctx.request.engagement_id).includes(p.decision_kind as UnattendedDecisionKind)) {
+    fail('permission_denied', `unattended approval is not delegated for ${p.decision_kind} in engagement ${ctx.request.engagement_id}`);
+  }
   if (Array.isArray((p.inputs as { bulk?: unknown })?.bulk)) fail('invalid_request', 'bulk decisions are refused');
   if (!p.display_receipt) fail('display_required', 'the decision cites no display receipt');
 

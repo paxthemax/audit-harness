@@ -54,7 +54,7 @@ export interface PrepareWorkPayload {
 
 defineOperation<PrepareWorkPayload>({
   name: 'prepare_work',
-  channels: ['auditor', 'worker'],
+  channels: ['auditor', 'worker', 'controller'],
   mutating: true,
   handler(ctx, p) {
     if (!WORK_AUTHORIZATION_KINDS.includes(p?.kind)) fail('invalid_request', 'work kind is required');

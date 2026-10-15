@@ -1,6 +1,7 @@
 import { fail, HarnessError, type ErrorCode } from '../core/errors.ts';
 import { digest, digestJson, randomToken } from '../core/hash.ts';
 import type { AnyRef, Ref } from '../core/refs.ts';
+import { AGENT_SESSION_PRINCIPAL, UNATTENDED_PRINCIPAL, YOLO_GOVERNOR_PRINCIPAL } from '../core/values.ts';
 import type { Archive } from '../store/archive.ts';
 import { withLock } from '../store/lock.ts';
 import type { PendingEvent, PendingRecord, RecordStore } from '../store/recordStore.ts';
@@ -90,6 +91,21 @@ export function operationNames(): string[] {
 export function getOperation(name: string): OperationDef | undefined {
   return registry.get(name);
 }
+
+/**
+ * What the yolo governor may call (operator request 2026-10-14): request work, read coverage and record its own run. No
+ * proposal, decision, export or closure operation is reachable; its approvals go through the unattended approver.
+ */
+export const GOVERNOR_OPERATIONS: readonly string[] = [
+  'build_context',
+  'request_job',
+  'prepare_work',
+  'generate_leads',
+  'cancel',
+  'start_yolo_run',
+  'record_yolo_progress',
+  'end_yolo_run',
+];
 
 // -----------------------------------------------------------------------------------------------
 // Transactions
@@ -217,6 +233,28 @@ export class Controller {
     return new Session(this, { channel: 'screen', principal: 'auditor', screen: { identity, session } });
   }
 
+  /**
+   * The unattended approver (operator opt-in, docs/operator-choices.md): a screen-channel session without a human, whose
+   * decisions carry its own principal. Refused unless harness.json delegates at least one kind for this engagement.
+   */
+  unattendedApprover(key: string, engagement: string, identity: string, session: string): Session {
+    if (!this.ws.checkSecret('auditor.key', key)) fail('permission_denied', 'unattended approver authentication failed');
+    if (!this.ws.unattendedKinds(engagement).length) {
+      fail('permission_denied', `unattended approval is not enabled for engagement ${engagement} (an operator enables it with \`harness unattended enable\`; the default is off)`);
+    }
+    return new Session(this, { channel: 'screen', principal: UNATTENDED_PRINCIPAL, screen: { identity, session } });
+  }
+
+  /**
+   * An agent session (`harness mcp`, operator decision 2026-10-14): a screen-channel session through which an agent
+   * presents pending decisions to the auditor and records them. Decisions carry the principal `agent-session`; nothing
+   * binds or proves the auditor's participation (no opt-in, no terminal check), only the provenance is labelled.
+   */
+  agentSession(key: string, identity: string, session: string): Session {
+    if (!this.ws.checkSecret('auditor.key', key)) fail('permission_denied', 'agent session authentication failed');
+    return new Session(this, { channel: 'screen', principal: AGENT_SESSION_PRINCIPAL, screen: { identity, session } });
+  }
+
   /** Capture channel: a hook or wrapper outside the model's control. */
   capture(key: string, name: string, program_digest: string, session: string): Session {
     if (!this.ws.checkSecret('capture.key', key)) fail('permission_denied', 'capture channel authentication failed');
@@ -260,6 +298,14 @@ export class Controller {
     return new Session(this, { channel: 'controller', principal: 'controller' });
   }
 
+  /**
+   * The yolo governor (`harness yolo run`): in-process harness code that drives unattended discovery -> test -> report
+   * cycles. Controller channel, its own principal, and only GOVERNOR_OPERATIONS.
+   */
+  governor(): Session {
+    return new Session(this, { channel: 'controller', principal: YOLO_GOVERNOR_PRINCIPAL });
+  }
+
   static newWorkerToken(): { token: string; digest: string } {
     const token = randomToken();
     return { token, digest: digest(token) };
@@ -290,6 +336,9 @@ export class Controller {
       if (scope !== g.engagement || req.engagement_id !== g.engagement) {
         fail('permission_denied', 'outside the worker grant', { operation: req.operation });
       }
+    }
+    if (principal.principal === YOLO_GOVERNOR_PRINCIPAL && !GOVERNOR_OPERATIONS.includes(req.operation)) {
+      fail('permission_denied', `the yolo governor may not call ${req.operation}`, { operation: req.operation });
     }
     if (!def.mutating) {
       const store = this.ws.store(scope, true);

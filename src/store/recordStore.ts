@@ -251,6 +251,9 @@ export class RecordStore {
   }
 
   get<T extends RecordType = RecordType>(r: Ref, type?: T): RecordEnvelope<T> {
+    if (!r || typeof r !== 'object' || typeof r.record_id !== 'string' || !Number.isInteger(r.revision)) {
+      fail('invalid_request', `not an exact record reference (expected {"record_id", "revision"}): ${JSON.stringify(r) ?? String(r)}`, { ref: r });
+    }
     if (r.scope && r.scope !== this.scope) fail('permission_denied', 'cross-scope reference grants no access', { ref: r });
     const env = this.revisions.get(r.record_id)?.[r.revision - 1];
     if (!env) fail('not_found', `record ${r.record_id}@${r.revision} not found`, { ref: r });

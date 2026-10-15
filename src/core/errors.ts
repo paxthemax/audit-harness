@@ -19,7 +19,7 @@ export const ERROR_CODES = {
   stop_unconfirmed: 'Confirm termination before admitting replacement work',
   snapshot_required: 'Reload a consistent record view before acting on event-derived state',
   packet_incomplete: 'Supply the missing lists or artifacts named in the error',
-  display_required: 'Render and review the bound revisions on the trusted decision screen before deciding',
+  display_required: 'Present the bound revisions and the required sections (trusted screen or agent session), then decide again',
   evidence_requirement_unmet: 'Supply the evidence the disposition requires, or choose another disposition',
   egress_denied: 'The request fell outside the egress policy; nothing was sent',
   not_found: 'Check the reference',

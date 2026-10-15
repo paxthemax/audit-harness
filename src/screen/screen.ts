@@ -1,4 +1,4 @@
-import { randomToken } from '../core/hash.ts';
+import { digestJson, randomToken } from '../core/hash.ts';
 import { fail, HarnessError, isHarnessError } from '../core/errors.ts';
 import type { Ref } from '../core/refs.ts';
 import type { RationaleAuthorship } from '../core/values.ts';
@@ -10,11 +10,12 @@ import { DisplayLog, implementedUnitsOf, readFirstActive, WITHHELD_NOTICE } from
 import { bold, choose, confirmWord, heading, page, show, type ScreenIO } from './io.ts';
 import { fullRecordLines, recordLines, refText } from './render.ts';
 
-// The trusted decision screen (design/harness-glossary.md): the authenticated, human-only interface
-// that renders bound record revisions, records display receipts and submits decisions. It opens a
-// `screen` channel session with the auditor key, and refuses to start unless both input and output
-// are an interactive terminal: a pipe, a script or a worker process cannot drive it. Worker sandboxes
-// never mount the workspace, so they cannot read the key (docs/cli.md lists what to verify).
+// The trusted decision screen (design/harness-glossary.md): the authenticated, interactive interface that renders
+// bound record revisions, records display receipts and submits decisions. It opens a `screen` channel session with the
+// auditor key, and refuses to start unless both input and output are an interactive terminal: a pipe, a script or a
+// worker process cannot drive it. Worker sandboxes never mount the workspace, so they cannot read the key (docs/cli.md
+// lists what to verify). The same class, on a non-interactive IO, renders and submits for the unattended approver and
+// for agent sessions (src/review), whose decisions carry their own principals.
 
 export interface OpenScreenOptions {
   ws: Workspace;
@@ -53,7 +54,7 @@ export interface DecisionRequest {
 }
 
 export type DecisionOutcome =
-  | { status: 'decided'; result: Record<string, unknown>; commit: string | null }
+  | { status: 'decided'; result: Record<string, unknown>; commit: string | null; display_receipt: Ref }
   | { status: 'refused'; error: HarnessError; rereview: boolean }
   | { status: 'cancelled' };
 
@@ -210,6 +211,29 @@ export class TrustedScreen {
       this.io.write('Cancelled. Nothing was recorded; the item stays undecided.\n');
       return { status: 'cancelled' };
     }
+    return this.submitDecision(req, r);
+  }
+
+  /**
+   * Unattended path (operator opt-in; the session must come from `Controller.unattendedApprover`): no rationale prompt and
+   * no confirmation, the same display receipt and the same operation, recorded as `agent_unattended`.
+   */
+  async decideUnattended(req: DecisionRequest): Promise<DecisionOutcome> {
+    const rationale = [
+      `Unattended approval under the operator's opt-in (harness.json unattended_approval, engagement ${this.engagement}, kind ${req.decision_kind}).`,
+      `The draft was applied as written; inputs digest ${digestJson(req.inputs)}. No human reviewed this decision.`,
+    ].join(' ');
+    heading(this.io, 'Decision summary (UNATTENDED, no human review)');
+    show(this.io, [`Kind: ${req.decision_kind}`, ...req.summary, `Reviewed revisions: ${req.reviewed.map(refText).join(', ')}`].join('\n') + '\n');
+    return this.submitDecision(req, { rationale, authorship: 'agent_unattended', agent_draft: null });
+  }
+
+  /**
+   * Non-interactive submission with an explicit rationale and authorship (unattended approver, agent sessions): record
+   * the display receipt of the current display, then submit the decision through its operation. No prompt, no
+   * confirmation; refusals come back as a `refused` outcome with the explanation written to the IO.
+   */
+  submitDecision(req: DecisionRequest, r: { rationale: string; authorship: RationaleAuthorship; agent_draft: string | null }): DecisionOutcome {
     let receipt: Ref;
     try {
       receipt = this.session.do(this.engagement, 'record_display', this.log.toPayload()).display_receipt;
@@ -243,7 +267,7 @@ export class TrustedScreen {
     for (const [k, v] of Object.entries(res.result)) {
       if (k !== 'decision' && k !== 'conditional_on') show(this.io, `  ${k}: ${JSON.stringify(v)}\n`);
     }
-    return { status: 'decided', result: res.result, commit: res.commit };
+    return { status: 'decided', result: res.result, commit: res.commit, display_receipt: receipt };
   }
 
   /** Plain-language explanation of a refusal: code, reason, what committed, what changed, next action. */

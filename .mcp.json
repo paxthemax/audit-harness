@@ -3,6 +3,11 @@
     "plur": {
       "command": "mise",
       "args": ["exec", "--", "plur-mcp"]
+    },
+    "harness": {
+      "command": "mise",
+      "args": ["exec", "--", "bin/harness", "mcp"],
+      "env": { "HARNESS_WORKSPACE": "${HARNESS_WORKSPACE:-./workspace}" }
     }
   }
 }

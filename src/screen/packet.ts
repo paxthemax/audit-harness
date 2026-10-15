@@ -1,12 +1,12 @@
-import { HarnessError } from '../core/errors.ts';
+import { fail, HarnessError } from '../core/errors.ts';
 import { isArtifactRef, refKey, type AnyRef, type Ref } from '../core/refs.ts';
-import { impactRank, isHighOrCritical, type PotentialImpact } from '../core/values.ts';
+import { DISPOSITIONS, impactRank, isHighOrCritical, type PotentialImpact } from '../core/values.ts';
 import type { RecordEnvelope } from '../schema/records.ts';
 import { WITHHELD_NOTICE, type DisplayLog } from './display.ts';
-import { collectDisposition, type DispositionInput, type NumberedRef } from './disposition.ts';
-import { askUntil, choose, heading, page, show } from './io.ts';
+import { collectDisposition, dispositionFromDecision, dispositionTemplate, type DispositionInput, type DispositionTarget, type NumberedRef } from './disposition.ts';
+import { askUntil, choose, heading, page, show, type ScreenIO } from './io.ts';
 import { proofLines, recordLines, refText, triState, valueText } from './render.ts';
-import type { DecisionOutcome, TrustedScreen } from './screen.ts';
+import type { DecisionOutcome, DecisionRequest, TrustedScreen } from './screen.ts';
 
 // Review-packet presentation (DEC-008 Q-017; design/harness-interface-contracts.md, "Packet
 // presentation"). For potential High/Critical (with `unknown` counting as high), the screen hides the
@@ -16,7 +16,8 @@ import type { DecisionOutcome, TrustedScreen } from './screen.ts';
 // verbatim artifacts, never a summary; linked variants are grouped by guarantee; each linked claim is
 // shown with its own potential impact and an "unreviewed flow" flag, and decided separately.
 //
-// The section state machine (`PacketReview`) is pure; `reviewPacket` drives it on a TrustedScreen.
+// The section state machine (`PacketReview`) is pure; `reviewPacket` drives it on a TrustedScreen, and an agent session
+// (src/review/session.ts) drives the same machine and model when an agent presents the packet to the auditor.
 
 export const PACKET_SECTIONS = ['claim', 'evidence', 'challenger', 'evidence_quality', 'unreviewed_statements', 'proposed_disposition'] as const;
 export type PacketSectionId = (typeof PACKET_SECTIONS)[number];
@@ -288,12 +289,13 @@ export class PacketReview {
 
 const SECTION_PREVIEW_LINES = 40;
 
-async function printSection(screen: TrustedScreen, s: SectionContent): Promise<void> {
+/** Write one section: its heading and lines (the first `preview` lines, with a note on how to page the rest). */
+export function printSection(io: ScreenIO, s: SectionContent, preview = SECTION_PREVIEW_LINES): void {
   const n = PACKET_SECTIONS.indexOf(s.id) + 1;
-  heading(screen.io, `[${n}] ${s.title}`);
-  show(screen.io, s.lines.slice(0, SECTION_PREVIEW_LINES).join('\n') + '\n');
-  if (s.lines.length > SECTION_PREVIEW_LINES) {
-    screen.io.write(`(${s.lines.length - SECTION_PREVIEW_LINES} more lines: enter "p ${n}" to page the full section)\n`);
+  heading(io, `[${n}] ${s.title}`);
+  show(io, s.lines.slice(0, preview).join('\n') + '\n');
+  if (s.lines.length > preview) {
+    io.write(`(${s.lines.length - preview} more lines: enter "p ${n}" to page the full section)\n`);
   }
 }
 
@@ -306,8 +308,8 @@ export interface PacketDecisionInputs {
   accepted_unreviewed: Ref[];
 }
 
-/** Collect the main claim's and each linked claim's disposition, and explicit acceptance of unreviewed statements. */
-export async function collectPacketDecision(screen: TrustedScreen, m: PacketModel): Promise<PacketDecisionInputs> {
+/** The main claim's and each linked claim's disposition target (what `collectDisposition` asks about). */
+export function packetTargets(m: PacketModel): { main: DispositionTarget; linked: { id: string; guarantee: string; claim: string | null; unreviewed_flow: boolean; target: DispositionTarget }[] } {
   const p = m.packet.body;
   const inv = m.investigation.body;
   const common = {
@@ -319,30 +321,47 @@ export async function collectPacketDecision(screen: TrustedScreen, m: PacketMode
     prerequisites: inv.prerequisites,
     anchor_count: inv.anchors.length,
   };
-  heading(screen.io, 'Main claim');
-  const main = await collectDisposition(screen.io, {
+  const main: DispositionTarget = {
     ...common,
     label: 'the main claim',
     linked_claim_id: null,
     guarantee: null,
     agent_impact: inv.potential_impact.agent,
     auditor_impact: inv.potential_impact.auditor,
-  });
-  const linked: PacketDecisionInputs['linked_claims'] = [];
-  for (const lc of p.linked_claims) {
+  };
+  const linked = p.linked_claims.map((lc) => {
     const full = inv.linked_claims.find((x) => x.id === lc.id);
-    heading(screen.io, `Linked claim ${lc.id}`);
-    show(screen.io, `Guarantee: ${lc.guarantee}\nClaim: ${full?.claim ?? '(text not found on the investigation)'}\n`);
-    if (lc.unreviewed_flow) screen.io.write('UNREVIEWED FLOW: this claim concerns a flow with no record_flow_review decision.\n');
-    const r = await collectDisposition(screen.io, {
-      ...common,
-      variants: full?.variants ?? common.variants,
-      label: `linked claim ${lc.id} (${lc.guarantee})`,
-      linked_claim_id: lc.id,
+    return {
+      id: lc.id,
       guarantee: lc.guarantee,
-      agent_impact: full?.potential_impact.agent ?? lc.potential_impact,
-      auditor_impact: full?.potential_impact.auditor ?? null,
-    });
+      claim: full?.claim ?? null,
+      unreviewed_flow: lc.unreviewed_flow,
+      target: {
+        ...common,
+        variants: full?.variants ?? common.variants,
+        label: `linked claim ${lc.id} (${lc.guarantee})`,
+        linked_claim_id: lc.id,
+        guarantee: lc.guarantee,
+        agent_impact: full?.potential_impact.agent ?? lc.potential_impact,
+        auditor_impact: full?.potential_impact.auditor ?? null,
+      },
+    };
+  });
+  return { main, linked };
+}
+
+/** Collect the main claim's and each linked claim's disposition, and explicit acceptance of unreviewed statements. */
+export async function collectPacketDecision(screen: TrustedScreen, m: PacketModel): Promise<PacketDecisionInputs> {
+  const p = m.packet.body;
+  const targets = packetTargets(m);
+  heading(screen.io, 'Main claim');
+  const main = await collectDisposition(screen.io, targets.main);
+  const linked: PacketDecisionInputs['linked_claims'] = [];
+  for (const lc of targets.linked) {
+    heading(screen.io, `Linked claim ${lc.id}`);
+    show(screen.io, `Guarantee: ${lc.guarantee}\nClaim: ${lc.claim ?? '(text not found on the investigation)'}\n`);
+    if (lc.unreviewed_flow) screen.io.write('UNREVIEWED FLOW: this claim concerns a flow with no record_flow_review decision.\n');
+    const r = await collectDisposition(screen.io, lc.target);
     linked.push({ id: lc.id, input: r.input, effective: r.effective });
   }
   const accepted: Ref[] = [];
@@ -363,6 +382,68 @@ export async function collectPacketDecision(screen: TrustedScreen, m: PacketMode
   };
 }
 
+/**
+ * The same inputs from a decision object an agent session submits: the main claim's disposition fields, `linked_claims`
+ * (one entry per linked claim, each with its `id`) and `accepted_unreviewed` (ids of the packet's unreviewed statements
+ * to accept explicitly; the rest stay conditions). Checked against the screen's disposition table.
+ */
+export function packetDecisionFromInputs(m: PacketModel, decision: Record<string, unknown>): PacketDecisionInputs {
+  const targets = packetTargets(m);
+  const linkedIn = decision.linked_claims ?? [];
+  const acceptedIn = decision.accepted_unreviewed ?? [];
+  const main = dispositionFromDecision(targets.main, decision, ['linked_claims', 'accepted_unreviewed']);
+  if (!Array.isArray(linkedIn)) fail('invalid_request', 'linked_claims must list one decision per linked claim');
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const l of linkedIn) {
+    if (!l || typeof l !== 'object' || typeof l.id !== 'string') fail('invalid_request', 'each linked_claims entry names its linked claim `id`');
+    if (!targets.linked.some((t) => t.id === l.id)) fail('invalid_request', `unknown linked claim ${l.id}`);
+    if (byId.has(l.id)) fail('invalid_request', `linked claim ${l.id} is decided twice`);
+    byId.set(l.id, l);
+  }
+  const linked = targets.linked.map((lc) => {
+    const l = byId.get(lc.id) ?? fail('invalid_request', `linked claim ${lc.id} needs its own disposition in this review`);
+    const r = dispositionFromDecision(lc.target, l, ['id']);
+    return { id: lc.id, input: r.input, effective: r.effective };
+  });
+  if (!Array.isArray(acceptedIn)) fail('invalid_request', 'accepted_unreviewed lists statement ids');
+  const unreviewed = m.packet.body.unreviewed_statements;
+  const accepted = acceptedIn.map(
+    (s) =>
+      unreviewed.find((r) => typeof s === 'string' && (r.record_id === s || refKey(r) === s)) ??
+      fail('invalid_request', `${String(s)} is not an unreviewed statement of this packet (${unreviewed.map(refKey).join(', ') || 'none'})`),
+  );
+  return {
+    packet: { record_id: m.packet.record_id, revision: m.packet.revision },
+    investigation: { record_id: m.investigation.record_id, revision: m.investigation.revision },
+    main: main.input,
+    main_effective: main.effective,
+    linked_claims: linked,
+    accepted_unreviewed: accepted,
+  };
+}
+
+/** JSON skeleton of the packet decision, one entry per disposition, from the screen's disposition table. */
+export function packetTemplate(m: PacketModel): Record<string, unknown> {
+  const targets = packetTargets(m);
+  const unreviewed = m.packet.body.unreviewed_statements.map(refKey);
+  const main = dispositionTemplate(targets.main);
+  return Object.fromEntries(
+    Object.entries(main).map(([d, skeleton]) => [
+      d,
+      {
+        ...skeleton,
+        linked_claims: targets.linked.map((lc) => ({
+          id: lc.id,
+          disposition: `<one of ${DISPOSITIONS.join(' | ')}, with the fields that disposition takes (as for the main claim); its own potential impact: agent ${lc.target.agent_impact ?? 'none'}>`,
+          potential_impact: null,
+          impact_lower_reason: null,
+        })),
+        accepted_unreviewed: unreviewed.length ? [`<optional: ids to accept explicitly among ${unreviewed.join(', ')}; the others stay conditions of the decision>`] : [],
+      },
+    ]),
+  );
+}
+
 /** Decision inputs for `dispose_investigation` (shape: src/decision/kinds.ts, `DisposeInputs`). */
 export function disposeInputs(d: PacketDecisionInputs): Record<string, unknown> {
   return {
@@ -370,6 +451,27 @@ export function disposeInputs(d: PacketDecisionInputs): Record<string, unknown> 
     investigation: d.investigation,
     ...d.main,
     linked_claims: d.linked_claims.map((l) => ({ id: l.id, ...l.input })),
+  };
+}
+
+/**
+ * The `dispose_investigation` request for a reviewed packet. The agent-drafted rationale is offered only when the
+ * proposed disposition was opened.
+ */
+export function packetDecisionRequest(review: PacketReview, inputs: PacketDecisionInputs): DecisionRequest {
+  return {
+    operation: 'record_decision',
+    decision_kind: 'dispose_investigation',
+    reviewed: [inputs.packet, inputs.investigation],
+    inputs: disposeInputs(inputs),
+    agent_draft: review.state('proposed_disposition') === 'opened' ? review.model.agent_draft : null,
+    accepted_unreviewed: inputs.accepted_unreviewed,
+    summary: [
+      `Main claim: ${inputs.main.disposition} (effective potential impact ${inputs.main_effective})`,
+      ...inputs.linked_claims.map((l) => `Linked claim ${l.id}: ${l.input.disposition} (effective potential impact ${l.effective})`),
+      `Unreviewed statements accepted explicitly: ${inputs.accepted_unreviewed.map(refKey).join(', ') || 'none (decision conditional on them)'}`,
+      `Section order recorded: ${review.log.sections.map((s) => s.section).join(' -> ')}`,
+    ],
   };
 }
 
@@ -385,7 +487,7 @@ export async function reviewPacket(screen: TrustedScreen, packetId: string): Pro
     show(io, model.status_lines.join('\n') + '\n');
     if (!model.evidence_first) {
       io.write(`Combined layout: potential impact ${model.max_impact} is below High.\n`);
-      for (const s of review.openAll()) await printSection(screen, s);
+      for (const s of review.openAll()) printSection(io, s);
     } else {
       io.write(`Evidence-first order: potential impact ${model.max_impact}. The proposed disposition stays hidden until sections 2, 3 and 4 are opened.\n`);
     }
@@ -408,7 +510,7 @@ export async function reviewPacket(screen: TrustedScreen, packetId: string): Pro
         if (!id) continue;
         const s = review.open(id);
         if (!s) io.write(`Section [${a}] is ${review.lockReason(id)}\n`);
-        else await printSection(screen, s);
+        else printSection(io, s);
         continue;
       }
       let m: RegExpMatchArray | null;
@@ -454,21 +556,7 @@ export async function reviewPacket(screen: TrustedScreen, packetId: string): Pro
           continue;
         }
         const inputs = await collectPacketDecision(screen, model);
-        const summary = [
-          `Main claim: ${inputs.main.disposition} (effective potential impact ${inputs.main_effective})`,
-          ...inputs.linked_claims.map((l) => `Linked claim ${l.id}: ${l.input.disposition} (effective potential impact ${l.effective})`),
-          `Unreviewed statements accepted explicitly: ${inputs.accepted_unreviewed.map(refKey).join(', ') || 'none (decision conditional on them)'}`,
-          `Section order recorded: ${screen.log.sections.map((s) => s.section).join(' -> ')}`,
-        ];
-        decided = await screen.decide({
-          operation: 'record_decision',
-          decision_kind: 'dispose_investigation',
-          reviewed: [inputs.packet, inputs.investigation],
-          inputs: disposeInputs(inputs),
-          agent_draft: review.state('proposed_disposition') === 'opened' ? model.agent_draft : null,
-          accepted_unreviewed: inputs.accepted_unreviewed,
-          summary,
-        });
+        decided = await screen.decide(packetDecisionRequest(review, inputs));
         break;
       }
       await askUntil(io, 'Unknown key. Press Enter to continue: ', () => null);

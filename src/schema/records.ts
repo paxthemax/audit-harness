@@ -1547,6 +1547,64 @@ const canarySchema = obj({
   outcome: nullable(obj({ decision: refSchema, disposition: text(), caught: bool() })),
 });
 
+// ---------------------------------------------------------------------------------------------
+// Yolo runs (operator request 2026-10-14): the governor's own account of an unattended run
+
+export interface YoloCycle {
+  n: number;
+  started_at: string;
+  ended_at: string | null;
+  /** The batch proposal the cycle authorized: the planner's, or the governor's narrowed one. */
+  work_proposal: Ref | null;
+  /** The cycle's batch authorization (an unattended decision). */
+  authorization: Ref | null;
+  /** Unattended `record_flow_review` decisions recorded to lift the batch gate. */
+  flow_reviews: Ref[];
+  /** Investigations the cycle's batch admitted. */
+  admitted: Ref[];
+  /** Steps skipped or refused, and why. */
+  notes: string[];
+}
+export interface YoloRunBody {
+  /** The operator's charter, frozen as written (JSON). */
+  charter: ArtifactRef;
+  status: V.YoloRunStatus;
+  started_at: string;
+  /** The run's wall-clock end; every authorization it creates is valid until then. */
+  until: string;
+  ended_at: string | null;
+  exit_reason: string | null;
+  /** The governor's process, to tell a live run from an interrupted one. */
+  process: { pid: number; start_time: string | null };
+  /** The run's one intake authorization (comprehension and planner rounds, the build). */
+  discovery_authorization: Ref | null;
+  cycles: YoloCycle[];
+  /** The run report the controller rendered from records at the latest update (Markdown). */
+  report: ArtifactRef | null;
+}
+const yoloCycleSchema = obj({
+  n: int(1),
+  started_at: isoTime,
+  ended_at: nullable(isoTime),
+  work_proposal: nullable(refSchema),
+  authorization: nullable(refSchema),
+  flow_reviews: refs,
+  admitted: refs,
+  notes: strings,
+});
+const yoloRunSchema = obj({
+  charter: artifactRefSchema,
+  status: oneOfValues(V.YOLO_RUN_STATUSES),
+  started_at: isoTime,
+  until: isoTime,
+  ended_at: nullable(isoTime),
+  exit_reason: nullable(text()),
+  process: obj({ pid: int(1), start_time: nullable(text()) }),
+  discovery_authorization: nullable(refSchema),
+  cycles: arr(yoloCycleSchema),
+  report: nullable(artifactRefSchema),
+});
+
 export const RECORD_SCHEMAS = {
   engagement: engagementSchema,
   target_snapshot: targetSnapshotSchema,
@@ -1591,6 +1649,7 @@ export const RECORD_SCHEMAS = {
   position: positionSchema,
   evaluation_contract: evaluationContractSchema,
   canary: canarySchema,
+  yolo_run: yoloRunSchema,
 } satisfies Record<string, Schema>;
 
 export type RecordType = keyof typeof RECORD_SCHEMAS;
@@ -1640,6 +1699,7 @@ export interface BodyByType {
   position: PositionBody;
   evaluation_contract: EvaluationContractBody;
   canary: CanaryBody;
+  yolo_run: YoloRunBody;
 }
 
 /** Short ID prefixes per record type (IDs are engagement-scoped: `<prefix>-<seq>`). */
@@ -1687,6 +1747,7 @@ export const ID_PREFIX: Record<RecordType, string> = {
   position: 'pos',
   evaluation_contract: 'evalc',
   canary: 'canary',
+  yolo_run: 'yolo',
 };
 
 // ---------------------------------------------------------------------------------------------

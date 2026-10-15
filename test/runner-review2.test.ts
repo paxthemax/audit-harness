@@ -295,6 +295,23 @@ test('M8: a second results document on stdout is not interpreted; cheatcode writ
   }
 });
 
+test('a fixture that does not build returns the diagnostics, bounded, so the next round can repair it', () => {
+  const interpret = (stderr: string) =>
+    interpretForgeTest({ exit_code: 1, signal: null, timed_out: false, cancelled: false, stdout: '', stderr, stdout_truncated: false, stderr_truncated: false, args: E('test_p', 'violation'), mode: 'test' });
+  const stderr = `Compiling 3 files with Solc 0.8.30\nError: Compiler run failed:\nError (7576): Undeclared identifier.\n  --> test/poc/P.t.sol:12:9:\n   |\n12 |         foo();\n   |         ^^^\n${'x'.repeat(6000)}`;
+  const r = interpret(stderr);
+  assert.equal(r.failed, 'compilation failed');
+  assert.equal(r.result.result_type, 'error');
+  assert.match(r.result.interpretation, /Error \(7576\): Undeclared identifier\.\n {2}--> test\/poc\/P\.t\.sol:12:9:/);
+  assert.doesNotMatch(r.result.interpretation, /Compiling 3 files/);
+  assert.match(r.result.interpretation, /\[truncated\]$/);
+  assert.ok(r.result.interpretation.length < 4300);
+  // forge refuses before compiling when one file needs two pinned compiler versions.
+  const versions = interpret('Warning: Found unknown `legacy` config for profile `default` defined in foundry.toml.\nError: Found incompatible versions:\ntest/poc/P.t.sol =0.8.24 imports:\n    contracts/tokens/StableTokenV2.sol =0.8.18\n');
+  assert.equal(versions.result.result_type, 'error');
+  assert.match(versions.result.interpretation, /Compiler output: Error: Found incompatible versions:\ntest\/poc\/P\.t\.sol =0\.8\.24 imports:\n {4}contracts\/tokens\/StableTokenV2\.sol =0\.8\.18$/);
+});
+
 test('L6: the agent host binds only the node binary', () => {
   const S = setup();
   try {

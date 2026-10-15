@@ -24,7 +24,7 @@ The caller's identity comes from the channel, never from the payload. The channe
 | `screen` | `secrets/auditor.key` plus an interactive terminal (the trusted decision screen) | Every human decision, display receipts |
 | `capture` | `secrets/capture.key` | `capture_input` only |
 | `worker` | A per-attempt grant token; only its digest is stored | Operations listed in the attempt's grant |
-| `runner`, `controller` | In-process only | Trusted runner receipts, scheduling, policy stops |
+| `runner`, `controller` | In-process only | Trusted runner receipts, scheduling, policy stops; the yolo governor (`harness yolo run`) as the principal `yolo-governor`, limited to requesting work and recording its `yolo_run` records |
 
 A repeated idempotency key with the same request digest returns the historical result with `replayed.state_changed_since`. The same key with different contents is refused with `idempotency_conflict`. In the walking skeleton the key is detected against committed events; there is no separate idempotency store (a [deferred mechanism](../../framework-design-lab/design/harness-state-and-execution.md#deferred-mechanisms)).
 

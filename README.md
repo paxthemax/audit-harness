@@ -34,10 +34,19 @@ npm run typecheck
 export HARNESS_WORKSPACE=./workspace
 bin/harness init
 bin/harness engagement create vault-audit --name "Vault audit" --owner auditor --purpose "pre-launch review"
-bin/harness screen accept_scope_and_policy -e vault-audit --draft policy.json   # trusted decision screen (needs a terminal)
 bin/harness snapshot register ./target -e vault-audit
 bin/harness status -e vault-audit                                               # decisions needed, work and spending, gaps
 ```
+
+Decisions are presented and recorded through an agent (operator decision, 2026-10-14). Start omp or Claude Code in this repository: both read `.mcp.json`, which runs the harness MCP server (`bin/harness mcp`, workspace from `HARNESS_WORKSPACE`). Ask the agent what needs deciding; it presents each item, discusses it with you and records your decision, labelled as made through an agent session. [docs/agent-review.md](docs/agent-review.md) describes the tools, the decision inputs and the provenance labels.
+
+The interactive trusted screen remains available beside the agent path:
+
+```bash
+bin/harness screen accept_scope_and_policy -e vault-audit --draft policy.json   # trusted decision screen (needs a terminal)
+```
+
+When no auditor is available, for example overnight, an operator can let the harness run itself: `harness yolo run -e vault-audit --charter yolo.json` runs repeated discovery -> test -> report cycles in which role agents seed knowledge, plan and test investigations and the governor admits their batches through the unattended approver, within the charter's limits. It records no disposition: its candidate findings are review packets that wait for the auditor, and `harness yolo report` (or the MCP tool `harness_yolo_report`) lists them. It needs the operator's opt-in (`harness unattended enable --kinds authorize_work[,record_flow_review]`); see [docs/cli.md](docs/cli.md#7-yolo-runs-unattended-discovery-test-and-report-operator-opt-in).
 
 [docs/agent-host-trial.md](docs/agent-host-trial.md) records the compatibility trial of Claude Code as a candidate agent host. [docs/cli.md](docs/cli.md) walks through the auditor's workflow, stage by stage. [docs/contracts.md](docs/contracts.md) publishes the contract-version-1 serialization, hashing and store layout. [docs/architecture.md](docs/architecture.md) maps the specification's components and requirements to modules and tests.
 
@@ -53,6 +62,8 @@ bin/harness status -e vault-audit                                               
 | `src/snapshot/`, `src/intake/` | Target snapshots, inventory, snapshot diffs, dependency probes and freshness (change evaluator); intake scanning |
 | `src/report/`, `src/library/`, `src/context/` | Report and export, import, closure; mechanism library and lessons; context builder |
 | `src/screen/`, `src/capture/`, `src/cli/` | Trusted decision screen, capture channel, command line |
+| `src/review/`, `src/mcp/` | Agent-mediated decisions: the agent review session and the MCP server (`harness mcp`) |
+| `src/yolo/` | The yolo governor: unattended discovery -> test -> report runs under an operator charter (operator request 2026-10-14) |
 | `src/agents/` | Reference role agents (in-sandbox runtime, tools and prompts per role) |
 | `src/scheduler/`, `src/leads/`, `src/evaluation/`, `src/comprehension/`, `src/method/`, `src/metrics/` | Batch scheduling, lead generators, evaluation and control checks, comprehension records, method versions, metrics |
 

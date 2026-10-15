@@ -66,7 +66,7 @@ test('reference agents run in the sandbox, reach the model only through the brok
           content: [
             tool('i1', 'propose_variant', { causal_sequence: ['deposit 1 ether', 'withdraw', 're-enter from receive()'], setup_powers: ['test funds the attacker with 1 ether', 'test deposits 5 ether as the victim'], expected_violation: 'attacker ends with at least 2 ether', defeating_condition: 'nonReentrant reverts the nested call' }),
             tool('i2', 'submit_fixture', { files: { 'test/ReenterPoC.t.sol': POC } }),
-            tool('i3', 'request_experiment', { fixture: '002-submit_fixture', variant: '001-propose_variant', match_test: 'test_reentrant_double_payout', expect: 'violation', runtime_seconds: 120 }),
+            tool('i3', 'request_experiment', { fixture: '002-submit_fixture', variant: '001-propose_variant', match_test: 'test_reentrant_double_payout', expect: [{ test: 'test_reentrant_double_payout', expect: 'violation' }], runtime_seconds: 120 }),
             tool('i4', 'submit_author_position', { text: 'The nested withdraw should hit the nonReentrant lock; the PoC tests whether it does.' }),
           ],
           stop_reason: 'tool_use',

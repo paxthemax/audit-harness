@@ -97,6 +97,7 @@ export function renderReport(m: ReportModel): string {
         name: string;
         kind: string;
         review_status: string;
+        unattended_review: boolean;
         reviewed_revision: { snapshot: Ref; decision: Ref } | null;
         comparisons: { ref: Ref; coverage: string; result: string; intent_timing: string[] }[];
       };
@@ -105,7 +106,7 @@ export function renderReport(m: ReportModel): string {
         d.comparisons
           .map((c) => `${refText(c.ref)} ${md(c.result)}/${md(c.coverage)}${c.intent_timing.includes('after_walkthrough') ? ' \\[after\\_walkthrough\\]' : ''}`)
           .join('; ') || 'none';
-      p(`| ${md(d.name)} (${refText(u.ref)}) | ${md(d.kind)} | ${md(d.review_status)} | ${rr} | ${cmps} |`);
+      p(`| ${md(d.name)} (${refText(u.ref)}) | ${md(d.kind)} | ${md(d.review_status)}${d.unattended_review ? ' (UNATTENDED: no human review)' : ''} | ${rr} | ${cmps} |`);
     }
   }
   p();

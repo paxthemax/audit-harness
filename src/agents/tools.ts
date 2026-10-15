@@ -25,30 +25,51 @@ export interface Ref {
 export interface AgentTask {
   args: { task: string; model: string; max_turns?: number; max_tokens?: number };
   job: { record_id: string; role: string; authorization: Ref; investigation: Ref | null; variant: Ref | null; snapshot: Ref; engagement: string };
+  /** The revision of every record in this round's context (record_id -> revision); the runtime fills it in. */
+  revisions?: Record<string, number>;
 }
 
 const str = (description: string) => ({ type: 'string', description });
 const strs = (description: string) => ({ type: 'array', items: { type: 'string' }, description });
 const refSchema = {
   type: 'object',
-  description: 'An exact record revision from the context, or a handle string returned by an earlier tool call in this round',
+  description: 'A record from the context: {"record_id", "revision"}; "id@revision" or a bare id (the context revision) also work',
   properties: { record_id: { type: 'string' }, revision: { type: 'integer' } },
 };
-const refOrHandle = { anyOf: [refSchema, { type: 'string', description: 'handle from an earlier tool call' }] };
+const refOrHandle = { anyOf: [refSchema, { type: 'string', description: 'a handle from an earlier tool call in this round, or a record id from the context ("unit-0004" or "unit-0004@3")' }] };
 const refs = (description: string) => ({ type: 'array', items: refOrHandle, description });
 const obj = (properties: Record<string, unknown>, required: string[]) => ({ type: 'object', properties, required });
 
 /**
- * A handle names an earlier outbox entry; the runner replaces `{"$result": handle, "path": p}` with
- * the committed result's value at `p` before it calls the operation.
+ * A record reference as the agent wrote it, made exact. A handle names an earlier outbox entry: the runner replaces
+ * `{"$result": handle, "path": p}` with the committed result's value at `p` before it calls the operation. A record id
+ * (`unit-0004`, `unit-0004@3`) or a `{record_id}` without a revision takes the revision this round's context holds;
+ * naming a record outside the context is an error the agent sees at once.
  */
-export function resolveHandle(v: unknown, path: string): unknown {
-  if (typeof v === 'string' && /^\d{3}-[a-z_]+$/.test(v)) return { $result: v, path };
+export function resolveHandle(v: unknown, path: string, t: AgentTask): unknown {
+  if (typeof v === 'string') {
+    if (/^\d{3}-[a-z_]+$/.test(v)) return { $result: v, path };
+    const m = /^([a-z]+-\d+)(?:@(\d+))?$/.exec(v.trim());
+    return m ? { record_id: m[1], revision: m[2] ? Number(m[2]) : contextRevision(m[1], t) } : v;
+  }
+  if (v && typeof v === 'object' && !('$result' in v) && typeof (v as Ref).record_id === 'string' && (v as Partial<Ref>).revision === undefined) {
+    return { ...v, revision: contextRevision((v as Ref).record_id, t) };
+  }
   return v;
 }
 
-function refList(list: unknown, path: string): unknown[] {
-  return Array.isArray(list) ? list.map((x) => resolveHandle(x, path)) : [];
+function contextRevision(id: string, t: AgentTask): number {
+  const revision = t.revisions?.[id];
+  if (revision === undefined) fail(`record ${id} is not in this context; name a record list_context shows, as {"record_id", "revision"} or "id@revision"`);
+  return revision;
+}
+
+function fail(message: string): never {
+  throw new Error(message);
+}
+
+function refList(list: unknown, path: string, t: AgentTask): unknown[] {
+  return Array.isArray(list) ? list.map((x) => resolveHandle(x, path, t)) : [];
 }
 
 const anchor = {
@@ -102,9 +123,9 @@ const statementTool: ToolDef = {
     ['kind', 'affiliation', 'origin', 'statement'],
   ),
   operation: 'submit_proposal',
-  payload: (i) => ({
+  payload: (i, t) => ({
     kind: 'system_statement',
-    body: { kind: i.kind, affiliation: i.affiliation, origin: i.origin, statement: i.statement, anchors: anchors(i.anchors), audit_units: refList(i.audit_units, 'audit_unit') },
+    body: { kind: i.kind, affiliation: i.affiliation, origin: i.origin, statement: i.statement, anchors: anchors(i.anchors), audit_units: refList(i.audit_units, 'audit_unit', t) },
   }),
 };
 
@@ -123,9 +144,9 @@ const clarificationTool: ToolDef = {
     ['issue', 'options'],
   ),
   operation: 'submit_proposal',
-  payload: (i) => ({
+  payload: (i, t) => ({
     kind: 'clarification',
-    body: { issue: i.issue, options: i.options ?? [], recommendation: i.recommendation ?? null, priority: i.priority ?? 50, blocks: refList(i.blocks, 'investigation'), answer_source: i.answer_source ?? 'auditor' },
+    body: { issue: i.issue, options: i.options ?? [], recommendation: i.recommendation ?? null, priority: i.priority ?? 50, blocks: refList(i.blocks, 'investigation', t), answer_source: i.answer_source ?? 'auditor' },
   }),
 };
 
@@ -157,16 +178,23 @@ const fixtureTool: ToolDef = {
 
 const experimentTool: ToolDef = {
   name: 'request_experiment',
-  description: 'Queue a sandboxed forge test of a fixture for this investigation. State whether each test expects a violation (the test asserts the bug happens) or no violation.',
+  description:
+    "Queue a sandboxed forge test run of a fixture for this investigation. Select the tests with forge's match flags and declare an expectation for every test the run selects: `violation` means the test asserts the bug happens (passing demonstrates it), `no_violation` means it asserts the intended property (failing is a counterexample). An undeclared test that fails makes the run inconclusive. Run the attack tests and their controls in one experiment: an experiment whose only result is no violation counts as refuting evidence.",
   input_schema: obj(
     {
       fixture: { type: 'string', description: 'handle of the submit_fixture call' },
       variant: refOrHandle,
-      match_test: str('test function name'),
-      expect: { enum: ['violation', 'no_violation'] },
+      match_path: str('forge --match-path glob, e.g. test/poc/MyPoC.t.sol'),
+      match_contract: str('forge --match-contract regex'),
+      match_test: str('forge --match-test regex'),
+      expect: {
+        type: 'array',
+        description: 'one entry per selected test; test is "Contract.testName" or "testName"',
+        items: obj({ test: str('test name'), expect: { enum: ['violation', 'no_violation'] } }, ['test', 'expect']),
+      },
       runtime_seconds: { type: 'integer' },
     },
-    ['fixture', 'match_test', 'expect'],
+    ['fixture', 'expect'],
   ),
   operation: 'request_job',
   payload: (i, t) => ({
@@ -174,10 +202,15 @@ const experimentTool: ToolDef = {
     purpose: 'experiment',
     adapter: 'forge_test',
     snapshot: t.job.snapshot,
-    fixture: resolveHandle(i.fixture, 'fixture'),
+    fixture: resolveHandle(i.fixture, 'fixture', t),
     investigation: t.job.investigation,
-    variant: i.variant ? resolveHandle(i.variant, 'variant') : t.job.variant,
-    args: { match_test: i.match_test, expect: [{ test: i.match_test, expect: i.expect }] },
+    variant: i.variant ? resolveHandle(i.variant, 'variant', t) : t.job.variant,
+    args: {
+      ...(i.match_path ? { match_path: i.match_path } : {}),
+      ...(i.match_contract ? { match_contract: i.match_contract } : {}),
+      ...(i.match_test ? { match_test: i.match_test } : {}),
+      expect: i.expect,
+    },
     limits: i.runtime_seconds ? { runtime_seconds: i.runtime_seconds } : undefined,
   }),
 };
@@ -212,7 +245,7 @@ export const ROLE_TOOLS: Record<string, ToolDef[]> = {
       description: 'Propose a Mermaid state diagram of a flow, bound to the statements (states, transitions) it depicts.',
       input_schema: obj({ audit_unit: refOrHandle, lens: str('purpose|flows|stores|transitions'), affiliation: { enum: ['designed', 'implemented', 'comparison'] }, source: str('mermaid source'), statements: refs('depicted statements') }, ['audit_unit', 'lens', 'affiliation', 'source']),
       operation: 'propose_kb_diagram',
-      payload: (i) => ({ audit_unit: resolveHandle(i.audit_unit, 'audit_unit'), lens: i.lens, affiliation: i.affiliation, source: i.source, statements: refList(i.statements, 'statement') }),
+      payload: (i, t) => ({ audit_unit: resolveHandle(i.audit_unit, 'audit_unit', t), lens: i.lens, affiliation: i.affiliation, source: i.source, statements: refList(i.statements, 'statement', t) }),
     },
   ],
   planner: [
@@ -234,9 +267,9 @@ export const ROLE_TOOLS: Record<string, ToolDef[]> = {
         ['method', 'question', 'audit_units', 'potential_impact'],
       ),
       operation: 'submit_proposal',
-      payload: (i) => ({
+      payload: (i, t) => ({
         kind: 'investigation',
-        body: { method: i.method, question: i.question, executable: i.executable !== false, lead_generator: i.lead_generator ?? 'attack_vector_sweep', audit_units: refList(i.audit_units, 'audit_unit'), guarantees: i.guarantees ?? [], potential_impact: i.potential_impact, prerequisites: i.prerequisites ?? [], anchors: anchors(i.anchors) },
+        body: { method: i.method, question: i.question, executable: i.executable !== false, lead_generator: i.lead_generator ?? 'attack_vector_sweep', audit_units: refList(i.audit_units, 'audit_unit', t), guarantees: i.guarantees ?? [], potential_impact: i.potential_impact, prerequisites: i.prerequisites ?? [], anchors: anchors(i.anchors) },
       }),
     },
     {
@@ -244,7 +277,7 @@ export const ROLE_TOOLS: Record<string, ToolDef[]> = {
       description: 'Prepare a reviewable batch proposal from proposed investigations (no grant; the auditor authorizes).',
       input_schema: obj({ investigations: refs('investigations'), estimated_spend: { type: 'number' }, estimated_runtime_seconds: { type: 'number' } }, ['investigations']),
       operation: 'prepare_work',
-      payload: (i) => ({ kind: 'batch', investigations: refList(i.investigations, 'investigation'), estimates: { spend: i.estimated_spend ?? 0, runtime_seconds: i.estimated_runtime_seconds ?? 0 } }),
+      payload: (i, t) => ({ kind: 'batch', investigations: refList(i.investigations, 'investigation', t), estimates: { spend: i.estimated_spend ?? 0, runtime_seconds: i.estimated_runtime_seconds ?? 0 } }),
     },
   ],
   investigator: [
@@ -274,7 +307,7 @@ export const ROLE_TOOLS: Record<string, ToolDef[]> = {
           setup_powers: i.setup_powers ?? [],
           expected_violation: i.expected_violation,
           defeating_condition: i.defeating_condition,
-          previous: i.previous ? resolveHandle(i.previous, 'variant') : null,
+          previous: i.previous ? resolveHandle(i.previous, 'variant', t) : null,
           change_classification: i.change_classification,
           linked_guarantee: i.linked_guarantee ?? null,
           linked_claim: i.linked_claim,
@@ -288,10 +321,10 @@ export const ROLE_TOOLS: Record<string, ToolDef[]> = {
       description: 'Record a variant\'s outcome from the evidence (supports, refuted, inconclusive, blocked, stress_assumption, abandoned) with the countercondition when refuted. Base it on trusted runner evidence, not on expectations.',
       input_schema: obj({ variant: refSchema, outcome: { enum: ['supports', 'refuted', 'inconclusive', 'blocked', 'stress_assumption', 'abandoned'] }, countercondition: str('the defeating condition observed'), evidence: refs('evidence records') }, ['variant', 'outcome']),
       operation: 'submit_proposal',
-      payload: (i) => ({
+      payload: (i, t) => ({
         kind: 'scenario_variant',
-        base: i.variant,
-        body: { outcome: i.outcome, countercondition: i.countercondition ? { text: i.countercondition, evidence: refList(i.evidence, 'evidence') } : null },
+        base: resolveHandle(i.variant, 'variant', t),
+        body: { outcome: i.outcome, countercondition: i.countercondition ? { text: i.countercondition, evidence: refList(i.evidence, 'evidence', t) } : null },
       }),
     },
     fixtureTool,
@@ -319,8 +352,8 @@ export const ROLE_TOOLS: Record<string, ToolDef[]> = {
         claim: i.claim,
         decision_requested: 'disposition',
         proposed_disposition: { value: i.proposed_disposition, rationale: i.rationale },
-        author_position: i.author_position ? resolveHandle(i.author_position, 'position') : null,
-        challenger_position: i.challenger_position ?? null,
+        author_position: i.author_position ? resolveHandle(i.author_position, 'position', t) : null,
+        challenger_position: i.challenger_position ? resolveHandle(i.challenger_position, 'position', t) : null,
         next_check: i.next_check ?? null,
       }),
     },
@@ -336,7 +369,7 @@ export const ROLE_TOOLS: Record<string, ToolDef[]> = {
       operation: 'submit_proposal',
       payload: (i, t) => ({
         kind: 'property',
-        body: { investigation: t.job.investigation, intended_behavior: refList(i.intended_behavior, 'statement'), actors: i.actors ?? [], actions: i.actions, units_and_bounds: i.units_and_bounds ?? '', environment_assumptions: i.environment_assumptions ?? [], check_oracle: i.check_oracle, excluded_actions: i.excluded_actions ?? [] },
+        body: { investigation: t.job.investigation, intended_behavior: refList(i.intended_behavior, 'statement', t), actors: i.actors ?? [], actions: i.actions, units_and_bounds: i.units_and_bounds ?? '', environment_assumptions: i.environment_assumptions ?? [], check_oracle: i.check_oracle, excluded_actions: i.excluded_actions ?? [] },
       }),
     },
     fixtureTool,
@@ -351,14 +384,14 @@ export const ROLE_TOOLS: Record<string, ToolDef[]> = {
       description: 'Accept or dispute a variant\'s declared setup powers against the attacker charter (privileged impersonation, storage edits and mocks cannot support a permissionless claim).',
       input_schema: obj({ variant: refSchema, status: { enum: ['accepted', 'disputed'] }, note: str('why') }, ['variant', 'status']),
       operation: 'submit_proposal',
-      payload: (i) => ({ kind: 'scenario_variant', base: i.variant, body: { challenger_review: { status: i.status, note: i.note ?? null } } }),
+      payload: (i, t) => ({ kind: 'scenario_variant', base: resolveHandle(i.variant, 'variant', t), body: { challenger_review: { status: i.status, note: i.note ?? null } } }),
     },
     {
       name: 'record_prerequisite_review',
       description: 'Record your independent prerequisite review and, for properties, adequacy.',
       input_schema: obj({ investigation: refSchema, prerequisite_review: { enum: ['accepted', 'disputed'] }, adequacy: { enum: ['sufficient', 'insufficient', 'not_applicable'] }, adequacy_reason: str('reason') }, ['investigation', 'prerequisite_review']),
       operation: 'submit_proposal',
-      payload: (i) => ({ kind: 'investigation', base: i.investigation, body: { prerequisite_review: i.prerequisite_review, ...(i.adequacy ? { adequacy: i.adequacy, adequacy_reason: i.adequacy_reason ?? null } : {}) } }),
+      payload: (i, t) => ({ kind: 'investigation', base: resolveHandle(i.investigation, 'investigation', t), body: { prerequisite_review: i.prerequisite_review, ...(i.adequacy ? { adequacy: i.adequacy, adequacy_reason: i.adequacy_reason ?? null } : {}) } }),
     },
     fixtureTool,
     experimentTool,
@@ -369,7 +402,7 @@ export const ROLE_TOOLS: Record<string, ToolDef[]> = {
       description: 'Propose that leads are duplicates, share a cause, or form a chain. Never merge or delete leads: every origin and dissent is kept, and a chain becomes its own question.',
       input_schema: obj({ relation: { enum: ['duplicate', 'shared_cause', 'chain'] }, members: refs('investigations'), proposed_cause: str('cause'), dissent: strs('dissent'), chain_question: str('for a chain: its own question') }, ['relation', 'members', 'proposed_cause']),
       operation: 'propose_lead_group',
-      payload: (i) => ({ relation: i.relation, members: refList(i.members, 'investigation'), proposed_cause: i.proposed_cause, dissent: i.dissent ?? [], chain_question: i.chain_question }),
+      payload: (i, t) => ({ relation: i.relation, members: refList(i.members, 'investigation', t), proposed_cause: i.proposed_cause, dissent: i.dissent ?? [], chain_question: i.chain_question }),
     },
   ],
   curator: [
@@ -378,7 +411,7 @@ export const ROLE_TOOLS: Record<string, ToolDef[]> = {
       description: 'Propose an engagement-local lesson with its counterconditions, applicability and source anchors. Lessons guide investigation and never authorize a finding.',
       input_schema: obj({ statement: str('the lesson'), counterconditions: strs('when it does not apply'), component_classes: strs('component classes'), standards: strs('standards'), sources: refs('source records') }, ['statement', 'counterconditions', 'sources']),
       operation: 'propose_lesson',
-      payload: (i) => ({ statement: i.statement, counterconditions: i.counterconditions, applicability: { component_classes: i.component_classes ?? [], standards: i.standards ?? [], compiler_versions: [] }, sources: refList(i.sources, 'record') }),
+      payload: (i, t) => ({ statement: i.statement, counterconditions: i.counterconditions, applicability: { component_classes: i.component_classes ?? [], standards: i.standards ?? [], compiler_versions: [] }, sources: refList(i.sources, 'record', t) }),
     },
   ],
 };

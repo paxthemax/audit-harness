@@ -1,9 +1,10 @@
 import { fail, HarnessError } from '../core/errors.ts';
-import { digest } from '../core/hash.ts';
+import { canonicalJson, digest } from '../core/hash.ts';
 import type { AnyRef, Ref } from '../core/refs.ts';
 import { AUDIT_UNIT_KINDS, impactRank, INVESTIGATION_METHODS, MODEL_AFFILIATIONS, STATEMENT_KINDS } from '../core/values.ts';
 import { defineOperation, type OpContext } from '../controller/controller.ts';
-import type { BodyByType, LinkedClaim } from '../schema/records.ts';
+import type { BodyByType, LinkedClaim, RecordEnvelope } from '../schema/records.ts';
+import type { RecordStore } from '../store/recordStore.ts';
 import { enqueueClarification } from './clarifications.ts';
 import { isTargetSourceEdit } from './packets.ts';
 import {
@@ -73,6 +74,28 @@ function retainConflict(ctx: OpContext, p: ProposalPayload, actual: number): voi
   );
 }
 
+/**
+ * Job dispatch revises an investigation or a scenario variant without changing what a proposal about it was based on:
+ * `request_job` appends the job link (the round's own job, or an experiment the agent requested earlier in the same
+ * round) and `start_attempt` moves an investigation's work to `running`. These happen after the context of the agent
+ * round was built, so without a rebase over them an agent's prerequisite review or variant outcome would conflict.
+ * Any other change, including a move to `ready_for_review` or a recorded outcome, still conflicts.
+ */
+function dispatchOnly(type: string, prev: Record<string, unknown>, next: Record<string, unknown>): boolean {
+  const { jobs: _prevJobs, work_state: prevState, blocked_reason: prevReason, ...prevContent } = prev;
+  const { jobs: _nextJobs, work_state: nextState, blocked_reason: nextReason, ...nextContent } = next;
+  const state = type === 'investigation' && ((prevState === nextState && prevReason === nextReason) || (nextState === 'running' && nextReason === null));
+  const stateless = type === 'scenario_variant' && prevState === nextState && prevReason === nextReason;
+  return (state || stateless) && canonicalJson(prevContent) === canonicalJson(nextContent);
+}
+
+/** Every revision after `base` up to `head` only recorded job dispatch. */
+function onlyDispatchSince(store: RecordStore, base: Ref, head: RecordEnvelope): boolean {
+  if (!['investigation', 'scenario_variant'].includes(head.type) || !Number.isInteger(base.revision) || base.revision < 1 || base.revision >= head.revision) return false;
+  const revisions = store.history(base.record_id).slice(base.revision - 1);
+  return revisions.every((env, i) => i === 0 || dispatchOnly(head.type, revisions[i - 1].body as unknown as Record<string, unknown>, env.body as unknown as Record<string, unknown>));
+}
+
 defineOperation<ProposalPayload>({
   name: 'submit_proposal',
   channels: ['auditor', 'worker'],
@@ -86,8 +109,11 @@ defineOperation<ProposalPayload>({
       if (!head) fail('not_found', `base ${p.base.record_id} not found`);
       if (head.type !== p.kind) fail('invalid_request', `base is a ${head.type}, not a ${p.kind}`);
       if (head.revision !== p.base.revision) {
-        retainConflict(ctx, p, head.revision);
-        return { conflict: true };
+        if (!onlyDispatchSince(ctx.store, p.base, head)) {
+          retainConflict(ctx, p, head.revision);
+          return { conflict: true };
+        }
+        p = { ...p, base: { record_id: head.record_id, revision: head.revision } };
       }
     }
     const handler = HANDLERS[p.kind];

@@ -6,7 +6,7 @@ import { parseArgs, type ParseArgsConfig } from 'node:util';
 import '../index.ts';
 import { HarnessError, isHarnessError } from '../core/errors.ts';
 import { refKey, type Ref } from '../core/refs.ts';
-import { DECISION_KINDS } from '../core/values.ts';
+import { DECISION_KINDS, UNATTENDED_DECISION_KINDS, UNATTENDED_DEFAULT_KINDS, type UnattendedDecisionKind } from '../core/values.ts';
 import { ROLE_PROFILES } from '../controller/roles.ts';
 import { Controller, getOperation, operationNames, type CallResult, type Session } from '../controller/controller.ts';
 import { Workspace } from '../controller/workspace.ts';
@@ -22,18 +22,20 @@ import {
   eventSchema,
   refSchema,
   type RecordEnvelope,
-  type RecordType,
 } from '../schema/records.ts';
 import { CAPTURE_PURPOSES, runCaptureHook, runCaptureWrapper, unitRef, type CapturePurpose } from '../capture/index.ts';
 import {
   acceptScopeAndPolicy,
+  acceptScopeAndPolicyUnattended,
   answerClarification,
   approveExport,
   attestCarryForward,
   authorizeWork,
+  authorizeWorkUnattended,
+  openUnattendedScreen,
+  recordFlowReviewUnattended,
   confirmInterpretations,
   genericDecision,
-  ledgerTotals,
   openTrustedScreen,
   recordFlowReview,
   renderVisible,
@@ -48,12 +50,20 @@ import {
 import { recordLines, refText } from '../screen/render.ts';
 import { InputClosed } from '../screen/io.ts';
 import { presentRecords, WITHHELD_NOTICE, type Presented } from '../screen/display.ts';
-import { AnthropicProvider, OmpGateway, OmpGatewayProvider, ProviderBroker, runAuditorCommand, runConformance, runQueue, spendSummary } from '../runner/index.ts';
+import { runAuditorCommand, runConformance, runQueue } from '../runner/index.ts';
+import { batchLines, engagementStatus, type BatchView } from '../review/overview.ts';
+import { ensureBroker } from '../review/broker.ts';
+import { runHarnessMcp } from '../mcp/harness.ts';
 import { AGENT_SESSION_ADAPTERS, runAgentSession } from '../capture/agentSession.ts';
+import { runYolo } from '../yolo/governor.ts';
+import { runProcessAlive } from '../yolo/ops.ts';
+import { runPackets } from '../yolo/report.ts';
 
 // `harness` command-line interface (docs/cli.md). Non-decision operations go through the auditor
-// channel, authenticated with `<workspace>/secrets/auditor.key`. Human decisions go only through the
-// trusted decision screen (`harness screen ...`), which needs an interactive terminal. The capture
+// channel, authenticated with `<workspace>/secrets/auditor.key`. Decisions go through the trusted
+// decision screen (`harness screen ...`, interactive terminal only), through an agent session
+// (`harness mcp`: an MCP server through which an agent presents pending decisions to the auditor and
+// records them, labelled `agent-session`), or, for delegated kinds, the unattended approver. The capture
 // commands use the capture channel and key. Every record text printed here passes through visible
 // rendering, so deceptive characters and escape sequences in record content cannot act on the terminal.
 //
@@ -229,6 +239,16 @@ class Cli {
       io.close();
     }
   }
+
+  /** The unattended approver (operator opt-in): no terminal, same operations, decisions labelled `agent_unattended`. */
+  async unattended(run: (s: TrustedScreen) => Promise<DecisionOutcome>): Promise<DecisionOutcome> {
+    const { screen, io } = openUnattendedScreen({ ws: this.ws, key: this.ws.readSecret('auditor.key'), engagement: this.eng(), controller: this.controller });
+    try {
+      return await run(screen);
+    } finally {
+      if (io.text()) this.print(io.text().trimEnd());
+    }
+  }
 }
 
 function outcomeExit(o: DecisionOutcome): number {
@@ -306,95 +326,133 @@ function cmdEngagement(cli: Cli, args: string[]): number {
   throw new UsageError('engagement create|list|show');
 }
 
-function heads(cli: Cli, type?: RecordType): RecordEnvelope[] {
-  return cli.call('read_records', type ? { type, limit: 5000 } : { limit: 5000 }).result.records;
+/**
+ * Operator command: delegate scope/policy acceptance, work authorization and (named explicitly) flow reviews to the
+ * unattended approver for one engagement (docs/operator-choices.md). Off by default; `disable` withdraws it. Decisions it
+ * makes are labelled `agent_unattended`.
+ */
+function cmdUnattended(cli: Cli, args: string[]): number {
+  const [sub, ...rest] = args;
+  const { values } = parse(rest, { kinds: { type: 'string' } });
+  const eng = cli.eng();
+  if (sub === 'enable') {
+    const kinds = values.kinds ? (values.kinds.split(',').map((k) => k.trim()).filter(Boolean) as UnattendedDecisionKind[]) : [...UNATTENDED_DEFAULT_KINDS];
+    cli.ws.setUnattended(eng, kinds, new Date().toISOString());
+    cli.emit({ ok: true, engagement: eng, unattended: kinds }, () => {
+      cli.print(`Unattended approval ENABLED for ${eng}: ${kinds.join(', ')}.`);
+      cli.print('Decisions of these kinds can now be recorded without a human (`harness screen <kind> --unattended`). They are labelled agent_unattended and listed in `harness status`. Withdraw with `harness unattended disable`.');
+    });
+    return EXIT.ok;
+  }
+  if (sub === 'disable') {
+    cli.ws.setUnattended(eng, null, new Date().toISOString());
+    cli.emit({ ok: true, engagement: eng, unattended: [] }, () => cli.print(`Unattended approval disabled for ${eng}. Earlier unattended decisions stay recorded as such.`));
+    return EXIT.ok;
+  }
+  if (sub === 'status') {
+    const kinds = cli.ws.unattendedKinds(eng);
+    cli.emit({ ok: true, engagement: eng, unattended: kinds }, () => cli.print(kinds.length ? `Unattended approval delegated for ${eng}: ${kinds.join(', ')}` : `Unattended approval is off for ${eng}.`));
+    return EXIT.ok;
+  }
+  throw new UsageError(`unattended enable [--kinds ${UNATTENDED_DECISION_KINDS.join(',')}] | disable | status   (needs -e <engagement>)`);
+}
+
+/**
+ * The yolo loop (operator request 2026-10-14): an agentic, unattended discovery -> test -> report run under the
+ * operator's charter (docs/operator-choices.md, "Yolo loop"). `run` blocks until the run ends; SIGINT, SIGTERM or
+ * `yolo stop` end it after stopping the running job. `status`, `report` and `stop` act on the latest run or the one named.
+ */
+async function cmdYolo(cli: Cli, args: string[]): Promise<number> {
+  const [sub, ...rest] = args;
+  const { values, positionals } = parse(rest, { charter: { type: 'string' }, out: { type: 'string' } });
+  if (!['run', 'status', 'report', 'stop'].includes(sub)) {
+    throw new UsageError('yolo run --charter charter.json | status [yolo-N] | report [yolo-N] [--out FILE] | stop [yolo-N]   (needs -e <engagement>)');
+  }
+  const eng = cli.eng();
+  if (sub === 'run') {
+    if (!values.charter) throw new UsageError('yolo run --charter charter.json');
+    const charter = jsonArg(`@${values.charter.replace(/^@/, '')}`, 'the charter');
+    const abort = new AbortController();
+    const stop = () => abort.abort();
+    process.on('SIGINT', stop);
+    process.on('SIGTERM', stop);
+    try {
+      // With --json, stdout carries only the result; the run's log goes to stderr.
+      const progress = (line: string) => (cli.g.json ? cli.out.stderr(renderVisible(line) + '\n') : cli.print(line));
+      const r = await runYolo(cli.controller, eng, charter, { signal: abort.signal, progress });
+      cli.emit({ ok: true, result: r }, () => {
+        cli.print(`Yolo run ${r.run.record_id} ${r.status} (${r.exit_reason}) after ${r.cycles} cycle(s): ${r.candidate_findings} candidate finding(s) among ${r.packets} packet(s) awaiting review.`);
+        cli.print(`Report: harness yolo report ${r.run.record_id} -e ${eng}. No human reviewed any of it: dispose each packet through an agent session (harness mcp) or on the trusted screen.`);
+      });
+      return EXIT.ok;
+    } finally {
+      process.off('SIGINT', stop);
+      process.off('SIGTERM', stop);
+    }
+  }
+  const store = cli.ws.store(eng, true);
+  const run = positionals[0]
+    ? store.mustHead(positionals[0].split('@')[0], 'yolo_run')
+    : store.heads('yolo_run').sort((a, b) => a.record_id.localeCompare(b.record_id, 'en', { numeric: true })).at(-1);
+  if (!run) throw new HarnessError('not_found', `no yolo run in ${eng} (start one with harness yolo run --charter charter.json -e ${eng})`);
+  const b = run.body;
+  const alive = b.status === 'running' && runProcessAlive(b.process);
+  if (sub === 'status') {
+    const packets = runPackets(store, b);
+    const candidates = packets.filter((p) => p.candidate).length;
+    const auths = [b.discovery_authorization, ...b.cycles.map((c) => c.authorization)].filter((r): r is Ref => !!r).map((r) => store.mustHead(r.record_id, 'work_authorization'));
+    cli.emit({ ok: true, run: refText(run), body: b, process_alive: alive, packets: packets.length, candidate_findings: candidates }, () => {
+      cli.print(`Yolo run ${run.record_id}: ${b.status}${b.exit_reason ? ` (${b.exit_reason})` : ''}${b.status === 'running' ? (alive ? `, process ${b.process.pid} alive` : `, process ${b.process.pid} ENDED (the next yolo run marks it interrupted)`) : ''}`);
+      cli.print(`Window: ${b.started_at} to ${b.until}${b.ended_at ? `; ended ${b.ended_at}` : ''}; ${b.cycles.length} cycle(s)`);
+      cli.print(`Packets awaiting review: ${packets.length}, candidate findings: ${candidates}`);
+      for (const a of auths) cli.print(`Authorization ${a.record_id} (${a.body.kind}, unattended): ${a.body.status}, ${a.body.investigations.length} investigation(s)`);
+      const last = b.cycles.at(-1);
+      if (last) for (const n of last.notes.slice(-10)) cli.print(`  cycle ${last.n}: ${n}`);
+      cli.print(`Report: harness yolo report ${run.record_id} -e ${eng}`);
+    });
+    return EXIT.ok;
+  }
+  if (sub === 'report') {
+    if (!b.report) {
+      cli.emit({ ok: true, run: refText(run), report: null }, () => cli.print(`Yolo run ${run.record_id} has no report yet: it records one with its first cycle.`));
+      return EXIT.ok;
+    }
+    const text = store.archive.getText(b.report.artifact);
+    if (values.out) {
+      writeFileSync(values.out, text);
+      cli.emit({ ok: true, run: refText(run), report: b.report, out: values.out }, () => cli.print(`Wrote the report of ${run.record_id} (${b.report!.artifact}) to ${values.out}`));
+    } else cli.emit({ ok: true, run: refText(run), report: b.report, text }, () => cli.print(text));
+    return EXIT.ok;
+  }
+  if (b.status !== 'running') {
+    cli.emit({ ok: true, run: refText(run), stopped: false }, () => cli.print(`Yolo run ${run.record_id} is not running (${b.status}).`));
+    return EXIT.ok;
+  }
+  if (!alive) {
+    cli.emit({ ok: true, run: refText(run), stopped: false }, () => cli.print(`Yolo run ${run.record_id} is marked running, but its process ${b.process.pid} has ended; the next yolo run marks it interrupted.`));
+    return EXIT.ok;
+  }
+  process.kill(b.process.pid, 'SIGTERM');
+  cli.emit({ ok: true, run: refText(run), stopped: true }, () => cli.print(`Stop requested: yolo run ${run.record_id} (process ${b.process.pid}) stops its running job and records the end of the run.`));
+  return EXIT.ok;
 }
 
 /** Home view (design/audit-harness.md, "Interaction and question design"): decisions needed, current work and spending, material gaps. */
 function cmdStatus(cli: Cli): number {
-  const all = heads(cli);
-  const of = <T extends RecordType>(t: T) => all.filter((r) => r.type === t) as RecordEnvelope<T>[];
-  const eng = of('engagement')[0];
-  if (!eng) throw new HarnessError('not_found', 'engagement record missing');
-  const decisions: { what: string; command: string }[] = [];
-  const work: string[] = [];
-  const gaps: string[] = [];
-  const e = eng.body;
-  if (!e.policy) decisions.push({ what: 'Scope and policy not accepted', command: `harness screen accept_scope_and_policy -e ${cli.eng()} --draft policy.json` });
-  for (const i of of('interpretation').filter((x) => x.body.status === 'proposed')) {
-    decisions.push({ what: `Interpretation ${i.record_id} awaits confirmation: "${i.body.proposed.statement}"`, command: `harness screen confirm_interpretations -e ${cli.eng()}` });
-  }
-  const clars = of('clarification')
-    .filter((c) => ['queued', 'presented', 'held'].includes(c.body.status))
-    .sort((a, b) => b.body.priority - a.body.priority);
-  for (const c of clars) decisions.push({ what: `Clarification ${c.record_id} (${c.body.status}, priority ${c.body.priority}): ${c.body.issue}`, command: `harness screen answer_clarification ${c.record_id} -e ${cli.eng()}` });
-  const packets = of('review_packet');
-  for (const inv of of('investigation').filter((x) => x.body.work_state === 'ready_for_review' && !x.body.disposition)) {
-    const p = packets.filter((x) => x.body.investigation.record_id === inv.record_id).pop();
-    decisions.push({
-      what: `Investigation ${inv.record_id} ready for review (potential impact ${inv.body.potential_impact.effective}): ${inv.body.question}`,
-      command: p ? `harness screen packet ${p.record_id} -e ${cli.eng()}` : '(no packet yet)',
-    });
-  }
-  const authorized = new Set(of('work_authorization').flatMap((a) => a.body.reviewed.map((r) => r.record_id)));
-  for (const wp of of('work_proposal').filter((x) => !authorized.has(x.record_id))) {
-    decisions.push({ what: `Work proposal ${wp.record_id} (${wp.body.kind}, ${wp.body.investigations.length} investigation(s)) awaits authorization`, command: `harness screen authorize_work ${wp.record_id} -e ${cli.eng()}` });
-  }
-  const fresh = of('conclusion_freshness');
-  const unattested = fresh.filter((f) => f.body.value === 'carried_forward_mechanical' && !f.body.attestation);
-  if (unattested.length) decisions.push({ what: `${unattested.length} conclusion(s) carried forward mechanically, unattested`, command: `harness screen attest_carry_forward -e ${cli.eng()}` });
-  for (const f of fresh.filter((x) => x.body.value === 'affected')) decisions.push({ what: `Conclusion ${refText(f.body.conclusion)} is affected by a change (recheck at stage 04)`, command: `harness screen decide reaffirm --record ${f.body.conclusion.record_id} -e ${cli.eng()} --inputs @inputs.json` });
-  for (const m of of('report_manifest').filter((x) => x.body.status === 'preview')) decisions.push({ what: `Export preview ${m.record_id} for ${m.body.audience}`, command: `harness screen approve_export ${m.record_id} -e ${cli.eng()}` });
-  for (const c of of('proposal_conflict').filter((x) => x.body.status === 'open')) decisions.push({ what: `Proposal conflict ${c.record_id} on ${c.body.target} (expected r${c.body.expected_revision}, actual r${c.body.actual_revision})`, command: `harness show ${c.record_id} -e ${cli.eng()}` });
-
-  // Current work and spending.
-  const ctl = of('control_state')[0];
-  if (ctl?.body.paused) work.push(`PAUSED by ${ctl.body.by}: ${ctl.body.reason}`);
-  for (const s of ctl?.body.stopped ?? []) if (s.termination === 'unconfirmed') work.push(`Termination UNCONFIRMED for attempt ${refText(s.attempt)}: no overlapping replacement is admitted`);
-  const byState = new Map<string, number>();
-  for (const i of of('investigation')) byState.set(i.body.work_state, (byState.get(i.body.work_state) ?? 0) + 1);
-  work.push(`Investigations by work state: ${[...byState].map(([k, n]) => `${k} ${n}`).join(', ') || 'none'}`);
-  for (const j of of('job').filter((x) => ['queued', 'running', 'outcome_unknown'].includes(x.body.status))) {
-    work.push(`Job ${j.record_id} ${j.body.status}: ${j.body.purpose} via ${j.body.adapter.name}${j.body.investigation ? ` for ${j.body.investigation.record_id}` : ''}; attempts ${j.body.attempts.map((a) => a.record_id).join(', ') || 'none'}`);
-  }
-  const t = ledgerTotals(of('ledger_entry'));
-  const unit = e.policy?.budget.unit ?? 'units';
-  work.push(`Spending (all ledger entries, ${unit}): actual ${t.spent}; reserved outstanding ${t.reserved}; uncertain ${t.uncertain}; engagement budget ${e.policy ? e.policy.budget.total : 'not set'}`);
-  for (const a of of('work_authorization').filter((x) => x.body.status === 'active')) {
-    const sp = spendSummary(cli.ws.store(cli.eng(), true), a.record_id);
-    work.push(
-      `Authorization ${a.record_id} (${a.body.kind}) active: limit ${sp.limit}; confirmed ${sp.confirmed}; estimated ${sp.estimated}; uncertain ${sp.uncertain}; remaining ${sp.remaining}; ${a.body.investigations.length} investigation(s)${a.body.validity ? `; valid until ${a.body.validity.until}` : ''}`,
-    );
-  }
-
-  if (getOperation('batch_status')) {
-    for (const l of batchLines(cli.call('batch_status', {}).result as BatchView)) work.push(l);
-  }
-
-  // Material gaps.
-  if (!e.active_snapshot) gaps.push(`No target snapshot registered (harness snapshot register <path> -e ${cli.eng()})`);
-  for (const [k, v] of Object.entries(e.ecosystem)) if (v && typeof v === 'object' && (v as { unknown?: boolean }).unknown) gaps.push(`Unknown ${k}: ${(v as { reason: string }).reason}`);
-  for (const u of of('audit_unit')) {
-    if (u.body.review_status === 'not_started' || u.body.review_status === 'partial') gaps.push(`Audit unit ${u.record_id} "${u.body.name}" (${u.body.kind}) is ${u.body.review_status}`);
-    for (const g of u.body.gaps) gaps.push(`Unit ${u.record_id}: ${g}`);
-    const unreviewed = u.body.functions.filter((f) => !f.reviewed);
-    if (unreviewed.length) gaps.push(`Unit ${u.record_id}: ${unreviewed.length} function(s) not reviewed: ${unreviewed.map((f) => f.name).join(', ')}`);
-  }
-  for (const f of of('suspicious_flag').filter((x) => !x.body.acknowledged)) gaps.push(`Suspicious content ${f.record_id} (${f.body.kind}) at ${f.body.path}:${f.body.line}: ${f.body.excerpt}`);
-  for (const f of fresh.filter((x) => x.body.value === 'possibly_affected')) gaps.push(`Conclusion ${refText(f.body.conclusion)} possibly affected (flagged, not blocking)`);
-  for (const s of of('target_snapshot')) for (const l of s.body.limitations) gaps.push(`Snapshot ${s.record_id}: ${l}`);
-
-  cli.emit({ ok: true, engagement: cli.eng(), decisions_needed: decisions, current_work: work, material_gaps: gaps }, () => {
-    cli.print(`Engagement ${cli.eng()}: ${e.name} [${e.closure_status}]   Active snapshot: ${refText(e.active_snapshot)}${e.read_first && !e.read_first.ended_at ? '   READ-FIRST MODE ACTIVE' : ''}`);
+  const s = engagementStatus(cli.ws, cli.auditor(), cli.eng());
+  const e = s.engagement.body;
+  const decisions = s.decisions.map((d) => ({ what: d.what, command: d.command }));
+  cli.emit({ ok: true, engagement: cli.eng(), decisions_needed: decisions, current_work: s.work, material_gaps: s.gaps }, () => {
+    cli.print(s.title);
     if (!e.policy && !e.active_snapshot) cli.print('Empty engagement: no scope, policy or snapshot yet. Progress is not inferred.');
     cli.print(`\nDecisions needed (${decisions.length}):`);
     if (!decisions.length) cli.print('  none');
     for (const d of decisions) cli.print(`  - ${d.what}\n      ${d.command}`);
     cli.print('\nCurrent work and spending:');
-    for (const w of work) cli.print(`  - ${w}`);
-    cli.print(`\nMaterial gaps (${gaps.length}):`);
-    if (!gaps.length) cli.print('  none recorded');
-    for (const g of gaps) cli.print(`  - ${g}`);
+    for (const w of s.work) cli.print(`  - ${w}`);
+    cli.print(`\nMaterial gaps (${s.gaps.length}):`);
+    if (!s.gaps.length) cli.print('  none recorded');
+    for (const g of s.gaps) cli.print(`  - ${g}`);
   });
   return EXIT.ok;
 }
@@ -513,7 +571,7 @@ async function cmdJob(cli: Cli, args: string[]): Promise<number> {
     case 'cancel':
       return cli.callAndShow('cancel', payloadOf(values, { ...(positionals[0] ? { job: positionals[0] } : {}), ...(values.reason ? { reason: values.reason } : {}) }));
     case 'run': {
-      ensureBroker(cli, values['live-providers'] as string | undefined);
+      ensureBroker(cli.controller, (values['live-providers'] as string | undefined)?.split(',').filter(Boolean));
       const r = await runQueue(cli.controller, cli.eng(), values.max ? { maxJobs: Number(values.max) } : {});
       cli.emit({ ok: true, result: r }, () => {
         cli.print(`Queue stopped: ${r.stopped}; ${r.ran.length} attempt(s) ran.`);
@@ -537,7 +595,22 @@ async function cmdScreen(cli: Cli, args: string[]): Promise<number> {
     operation: { type: 'string' },
     evaluation: { type: 'string' },
     rollback: { type: 'boolean' },
+    unattended: { type: 'boolean' },
   });
+  if (values.unattended) {
+    // Operator opt-in (`harness unattended enable`); the controller refuses unless this engagement delegated the kind.
+    const draft = values.draft ? jsonArg('@' + values.draft, '--draft') : {};
+    if (kind === 'accept_scope_and_policy') return cli.unattended((s) => acceptScopeAndPolicyUnattended(s, draft)).then(outcomeExit);
+    if (kind === 'authorize_work') {
+      if (!positionals[0]) throw new UsageError('screen authorize_work <work-proposal-id> --unattended --draft limits.json');
+      return cli.unattended((s) => authorizeWorkUnattended(s, positionals[0], draft)).then(outcomeExit);
+    }
+    if (kind === 'record_flow_review') {
+      if (!positionals[0]) throw new UsageError('screen record_flow_review <audit-unit-id> --unattended [--draft gaps.json]');
+      return cli.unattended((s) => recordFlowReviewUnattended(s, positionals[0], draft)).then(outcomeExit);
+    }
+    throw new UsageError(`--unattended applies only to: ${UNATTENDED_DECISION_KINDS.join(', ')}`);
+  }
   const run = (fn: (s: TrustedScreen) => Promise<DecisionOutcome>) => cli.screen(fn).then(outcomeExit);
   switch (kind) {
     case 'packet':
@@ -684,7 +757,7 @@ function cmdCall(cli: Cli, args: string[]): number {
   if (!op) throw new UsageError(`call <operation> [--payload JSON|@file]; registered: ${operationNames().join(', ')}`);
   const def = getOperation(op);
   if (def && !def.channels.includes('auditor')) {
-    throw new HarnessError('permission_denied', `${op} is not available on the auditor channel (channels: ${def.channels.join(', ')}); human decisions use \`harness screen\``, { operation: op });
+    throw new HarnessError('permission_denied', `${op} is not available on the auditor channel (channels: ${def.channels.join(', ')}); decisions use \`harness screen\` or an agent session (\`harness mcp\`)`, { operation: op });
   }
   const scope = values.library ? 'library' : undefined;
   if (op === 'read_records' && !scope) {
@@ -703,29 +776,6 @@ function cmdCall(cli: Cli, args: string[]): number {
 // -----------------------------------------------------------------------------------------------
 // Agents, positions, fixtures, batches
 
-/**
- * The provider broker for agent jobs run by this process. A broker already active in the process is
- * used as is; otherwise one is created with the workspace's configured providers: an external
- * provider's credential is read from `secrets/providers/<name>.key`; `omp_gateway` providers share one
- * `omp auth-gateway stdio` child per binary and profile, which holds the logins itself. Which providers
- * may receive live-exploitable material is an operator choice (`--live-providers`); by default none may.
- */
-function ensureBroker(cli: Cli, live: string | undefined): void {
-  if (ProviderBroker.active()) return;
-  const b = new ProviderBroker(cli.controller, { liveExploitableProviders: live ? live.split(',').filter(Boolean) : [] });
-  const gateways = new Map<string, OmpGateway>();
-  for (const p of cli.ws.config.providers) {
-    if (p.kind === 'external' && p.name === 'anthropic') b.registerFromWorkspace(new AnthropicProvider());
-    else if (p.kind === 'omp_gateway') {
-      if (!p.omp) throw new UsageError(`provider ${p.name}: an omp_gateway provider needs its omp settings in harness.json`);
-      const key = JSON.stringify([p.omp.binary, p.omp.version, p.omp.profile]);
-      let gw = gateways.get(key);
-      if (!gw) gateways.set(key, (gw = new OmpGateway({ binary: p.omp.binary, version: p.omp.version, profile: p.omp.profile })));
-      b.registerSelfAuthenticating(new OmpGatewayProvider(gw, { name: p.name, upstream: p.omp.upstream, models: p.models, rates: p.omp.rates, headroom: p.omp.headroom }));
-    }
-  }
-}
-
 async function cmdAgentSession(cli: Cli, rest: string[]): Promise<number> {
   const { values, positionals } = parse(rest, {
     model: { type: 'string' },
@@ -740,7 +790,7 @@ async function cmdAgentSession(cli: Cli, rest: string[]): Promise<number> {
   if (!role || !values.model) throw new UsageError(`agent session <role> --model M [--investigation inv-N] [--authorization auth-N] [--adapter ${AGENT_SESSION_ADAPTERS.join('|')}] [--max-turns N]`);
   const adapter = (values.adapter ?? 'reference_agent') as (typeof AGENT_SESSION_ADAPTERS)[number];
   if (!AGENT_SESSION_ADAPTERS.includes(adapter)) throw new UsageError(`--adapter must be one of ${AGENT_SESSION_ADAPTERS.join(', ')}`);
-  ensureBroker(cli, values['live-providers']);
+  ensureBroker(cli.controller, values['live-providers']?.split(',').filter(Boolean));
   const io = ttyIO();
   try {
     const entries = await runAgentSession({
@@ -872,27 +922,6 @@ export function fixtureLines(res: { fixture: { artifact: string }; overrides_tar
   }
   out.push(`Fixture ${res.fixture.artifact}: ${files} file(s)`);
   for (const f of res.added) out.push(`  adds: ${f}`);
-  return out;
-}
-
-interface BatchView {
-  batches: { authorization: Ref; kind: string; status: string; investigations: { ref: Ref; work_state: string; disposition: string | null }[]; jobs: Record<string, number>; spend: { used: number; limit: number }; runtime: { used: number; limit: number } }[];
-  next_job: Ref | null;
-  held: { job: string; reason: string }[];
-  review_queue: { ready: number; capacity: number | null; discovery_paused: boolean };
-}
-
-function batchLines(v: BatchView): string[] {
-  const out: string[] = [];
-  for (const b of v.batches) {
-    out.push(
-      `Batch ${refText(b.authorization)} (${b.kind}) ${b.status}: spend ${b.spend.used}/${b.spend.limit}; runtime ${b.runtime.used}/${b.runtime.limit} s; jobs ${Object.entries(b.jobs).map(([k, n]) => `${k} ${n}`).join(', ') || 'none'}; investigations ${b.investigations.map((i) => `${i.ref.record_id} ${i.work_state}${i.disposition ? `/${i.disposition}` : ''}`).join(', ') || 'none'}`,
-    );
-  }
-  out.push(`Next job: ${v.next_job ? refText(v.next_job) : 'none'}`);
-  for (const h of v.held) out.push(`Held job ${h.job}: ${h.reason}`);
-  const q = v.review_queue;
-  out.push(`Review queue: ${q.ready} ready / capacity ${q.capacity ?? 'not set'}${q.discovery_paused ? ' — DISCOVERY PAUSED (review queue full)' : ''}`);
   return out;
 }
 
@@ -1056,6 +1085,10 @@ const USAGE = `harness — audit harness CLI (see docs/cli.md)
 Global: --workspace DIR (or HARNESS_WORKSPACE; default ./workspace)  -e/--engagement ID (or HARNESS_ENGAGEMENT)  --json
 
   init                                   create a workspace and its secrets
+  unattended enable [--kinds K,..] | disable | status   operator opt-in: let the unattended approver record scope/policy and work authorization, and flow reviews if named in --kinds (off by default)
+  yolo run --charter F | status [yolo-N] | report [yolo-N] [--out F] | stop [yolo-N]
+         operator opt-in: an agentic, unattended discovery -> test -> report loop under a charter; needs the
+         unattended approver for authorize_work (and record_flow_review for unattended flow reviews)
   engagement create <id> --name --owner --purpose [--chain --hardfork]
   engagement list | show [id]
   status                                 home view: decisions needed, current work and spending, material gaps
@@ -1073,11 +1106,15 @@ Global: --workspace DIR (or HARNESS_WORKSPACE; default ./workspace)  -e/--engage
          packet <pkt-id> | confirm_interpretations [ids] | answer_clarification [id]
          accept_scope_and_policy --draft policy.json | authorize_work <proposal> [--draft limits.json]
          record_flow_review <unit> | attest_carry_forward [--snapshot S] | approve_export <manifest>
+         (accept_scope_and_policy, authorize_work and record_flow_review also take --unattended: no terminal, only for
+          kinds the operator delegated with "unattended enable")
          decide <kind> --record id[@rev] ... --inputs JSON|@file
   export prepare --file F | export approve <manifest> | export bundle <manifest> --destination DIR
   import <bundle-dir>
   capture [--purpose P] [--unit U] [--once] [-- <agent argv...>]
   capture-hook                           Claude Code UserPromptSubmit hook (reads hook JSON on stdin)
+  mcp                                    MCP server on stdio (JSON-RPC): an agent presents pending decisions to the
+                                         auditor, discusses them and records them (labelled agent-session)
   schemas --out DIR                      write every JSON Schema (NFR-10)
   call <operation> [--payload JSON|@file] [--set k=v ...] [--library]
   agent session <role> --model M [--investigation inv-N] [--authorization auth-N] [--adapter reference_agent|claude_code] [--max-turns N] [--live-providers P,...]
@@ -1117,6 +1154,10 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
         return cmdInit(cli);
       case 'engagement':
         return cmdEngagement(cli, args);
+      case 'unattended':
+        return cmdUnattended(cli, args);
+      case 'yolo':
+        return await cmdYolo(cli, args);
       case 'status':
         return cmdStatus(cli);
       case 'records':
@@ -1175,6 +1216,9 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
         return await cmdCapture(cli, args);
       case 'capture-hook':
         return await cmdCaptureHook(cli);
+      case 'mcp':
+        await runHarnessMcp({ workspace: cli.g.workspace, input: process.stdin, output: process.stdout, error: process.stderr });
+        return EXIT.ok;
       case 'schemas':
         return cmdSchemas(cli, args);
       case 'call':
