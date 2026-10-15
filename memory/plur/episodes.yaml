@@ -34,3 +34,73 @@
   channel: mcp
   session_id: 86089581-c3e1-4a98-84c4-78925f4793ea
   timestamp: '2026-10-12T16:35:58.061Z'
+- id: EP-1791975625090-xcnv
+  summary: >-
+    Prepared release 0.1.0 of the harness: verified typecheck and 153 tests pass, found no tags or changelog, wrote
+    CHANGELOG.md. Did not commit or tag.
+  channel: mcp
+  session_id: 9ecb8d40-4d80-4a57-b96c-05ee90543fbe
+  timestamp: '2026-10-14T11:00:25.090Z'
+- id: EP-1791976210335-629x
+  summary: >-
+    Cloned yAudit/yborg-mento-v3-shadow-audit as a sibling of the framework repo, created branch `audit` at main
+    (523df78) and initialised all 62 pinned submodules. Harness engagement and snapshot registration not yet done,
+    pending operator inputs.
+  channel: mcp
+  session_id: 490838c5-1596-4acd-9ce3-a9a7f429267f
+  timestamp: '2026-10-14T11:10:10.335Z'
+- id: EP-1791980857825-oo35
+  summary: >-
+    Registered mento-core (snap-0002) and bold (snap-0001) as separate engagements, fixed the upstream-under-ignored-dir
+    snapshot bug and the forge lint failure, built an opt-in unattended approval mode (two delegable kinds), used it for
+    policy and intake authorization on both engagements, and ran sandboxed forge_build jobs to completion.
+  channel: mcp
+  session_id: 490838c5-1596-4acd-9ce3-a9a7f429267f
+  timestamp: '2026-10-14T12:27:37.825Z'
+- id: EP-1791984458118-0rql
+  summary: >-
+    Coordinated four omp analysts (static reading, HEAD-only git, no network) over the Mento V3 shadow-audit targets.
+    Landed their audit units, statements and a first scenario batch of three investigations per engagement (with ranked
+    reserves and work proposals) through the auditor channel, which the operator chose. Five lessons were learned
+    explicitly as drafts (ENG-2026-10-14-006 to 010); their knowledge_anchors and structured_data still need adding to
+    engrams.yaml while no PLUR writer runs.
+  channel: mcp
+  session_id: 8604b4d6-045e-407c-9e44-97d26f2207c0
+  timestamp: '2026-10-14T13:27:38.118Z'
+- id: EP-1791993864170-g5w8
+  summary: >-
+    Ran Mento V3 shadow-audit batch-01 end to end: on the operator's choice extended the unattended approver to
+    record_flow_review (labelled, gap-marked, closure-incomplete; 165 tests pass), cleared the FR-32 gate, authorized
+    both batches unattended, had four omp agents build and cross-challenge PoCs for six investigations, and landed
+    trusted-runner evidence, clean replays, a positive control, positions and six review packets (all ready_for_review).
+  channel: mcp
+  session_id: 14902c26-3e1d-4bc8-9ba8-4b149c205ffe
+  timestamp: '2026-10-14T16:04:24.170Z'
+- id: EP-1792000247040-d1mq
+  summary: >-
+    Added the yolo loop to the audit harness: a deterministic governor (src/yolo/) runs unattended discovery -> test ->
+    report cycles under an operator charter, admitting work only through the unattended approver and leaving
+    dispositions to the auditor; CLI, MCP report tool, status line, docs and tests (188/188 passing).
+  channel: mcp
+  session_id: 55c5df32-adf5-4cef-9f47-3e49a429d4e1
+  timestamp: '2026-10-14T17:50:47.040Z'
+- id: EP-1792005573130-1bzg
+  summary: >-
+    Operated the audit harness in yolo mode. Six independent evaluators assessed the six batch-01 packets: all valid
+    with corrections, no dispositions recorded (workspace/drafts/evaluation-01/EVALUATION.md). Configured omp-anthropic
+    (pinned omp 18.10.1) and ran one yolo cycle per engagement (yolo-0001). Fixed eight yolo and agent defects the real
+    target exposed (src/yolo, src/agents, src/context/builder.ts, src/decision/proposals.ts, src/runner/adapters.ts;
+    192/192 tests pass). Evaluated the four new packets (workspace/drafts/evaluation-02/EVALUATION.md) and withdrew
+    unattended delegation afterwards.
+  channel: mcp
+  session_id: 02706caf-c6d1-4502-b9a2-632936f4af00
+  timestamp: '2026-10-14T19:19:33.130Z'
+- id: EP-1792059575467-ehbd
+  summary: >-
+    Built audit repositories: `bin/audit new` scaffolds a per-audit repo from template/ (framework pinned as harness/
+    submodule, targets pinned in audit.json as submodule/clone/path, engagements per Foundry root, workspace beside
+    them, AGENTS.md/.mcp.json/Claude settings). src/auditrepo/ implements target add/pin, engagement add, setup,
+    snapshot, status, hook; tests in test/auditrepo.test.ts; trialled on the Mento shadow-audit checkout.
+  channel: mcp
+  session_id: 98451886-3ffa-45cd-aaa6-d0743a3bc89b
+  timestamp: '2026-10-15T10:19:35.467Z'
