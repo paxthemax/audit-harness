@@ -1,0 +1,6 @@
+#!/bin/sh
+# Launcher for the audit repository tool (src/auditrepo/main.ts; docs/audit-repo.md), e.g. `bin/audit new ../audits/acme`.
+# Resolves the repository from this script's real location, so it works through a symlink.
+self=$(readlink -f -- "$0" 2>/dev/null || printf '%s\n' "$0")
+root=$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd -P) || exit 1
+exec node "$root/src/auditrepo/main.ts" "$@"

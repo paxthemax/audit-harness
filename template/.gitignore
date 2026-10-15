@@ -1,0 +1,7 @@
+# Harness workspace: each engagement store is its own git repository, and secrets/ holds the channel keys.
+/workspace/
+# Foundry output from scratch projects.
+/work/**/out/
+/work/**/cache/
+node_modules/
+*.log

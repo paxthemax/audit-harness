@@ -143,6 +143,18 @@ Since 2026-10-14 the agent session of `harness mcp` does this on purpose: it run
 | Control checks | Recorded as auditor-run results with workstation provenance, not as trusted receipts | `src/evaluation/controls.ts` |
 | Snapshot revisions that change nothing material | A build revision that keeps the same frozen tree, source, deployment and fork identity does not make decisions stale | `staleMembers`, `src/decision/framework.ts` |
 
+## Defaults of the audit repository tool
+
+Packaging defaults of `bin/audit` ([audit-repo.md](audit-repo.md)); none changes a harness mechanism:
+
+| Rule | Default | Code |
+|---|---|---|
+| Framework | Pinned as the `harness/` submodule at this checkout's HEAD, from its `origin` remote; `--link-framework` links a working tree instead and `status` warns that it is not reproducible | `cmdNew`, `src/auditrepo/main.ts` |
+| Target mode | `submodule` at `targets/<name>`; `clone` and `path` on request. Without `--ref`, the remote's default branch is pinned | `cmdTarget` |
+| Moving checkouts | `setup` moves submodule and clone targets to their pins unless they have tracked local changes; it never clones or moves a path target | `ensureTarget` |
+| Snapshots | `setup` registers only an engagement's first snapshot; later ones only on `snapshot`. A root that is off its pin, has uncommitted changes or nested submodules off their pins is refused unless `--allow-dirty` | `cmdSetup`, `register` |
+| Agent guard rails | `.claude/settings.json` denies edits to `targets/`, `harness/`, `workspace/` and reads of `workspace/secrets/`; the capture hook is printed for user settings, not installed in the repository | `template/` |
+
 ## Defaults of the yolo governor
 
 Rules the governor applies that the operator's request did not fix ([cli.md](cli.md#7-yolo-runs-unattended-discovery-test-and-report-operator-opt-in)):

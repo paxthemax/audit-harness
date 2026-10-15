@@ -30,6 +30,18 @@ npm run typecheck
 
 ## Using it
 
+Run each audit in its own audit repository, which pins this framework as a submodule next to the code under audit:
+
+```bash
+bin/audit new ../audits/acme && cd ../audits/acme
+bin/audit target add vault https://github.com/acme/vault.git --ref v1.2.0
+bin/audit engagement add vault-core --target vault --root contracts --name "Vault core" --owner auditor --purpose "pre-launch review"
+bin/audit setup            # workspace, checkouts at their pins, engagements, first snapshots
+bin/audit status           # read-only checks, each failure with its fix
+```
+
+[docs/audit-repo.md](docs/audit-repo.md) describes the layout, the target modes (submodule, ignored clone, existing path), pin moves and snapshots, and the agent configuration the repository ships with. The harness CLI underneath works on any workspace:
+
 ```bash
 export HARNESS_WORKSPACE=./workspace
 bin/harness init
@@ -63,6 +75,7 @@ When no auditor is available, for example overnight, an operator can let the har
 | `src/report/`, `src/library/`, `src/context/` | Report and export, import, closure; mechanism library and lessons; context builder |
 | `src/screen/`, `src/capture/`, `src/cli/` | Trusted decision screen, capture channel, command line |
 | `src/review/`, `src/mcp/` | Agent-mediated decisions: the agent review session and the MCP server (`harness mcp`) |
+| `src/auditrepo/`, `template/` | Audit repositories: the `audit` tool (`bin/audit`) and the files a new audit repository starts from |
 | `src/yolo/` | The yolo governor: unattended discovery -> test -> report runs under an operator charter (operator request 2026-10-14) |
 | `src/agents/` | Reference role agents (in-sandbox runtime, tools and prompts per role) |
 | `src/scheduler/`, `src/leads/`, `src/evaluation/`, `src/comprehension/`, `src/method/`, `src/metrics/` | Batch scheduling, lead generators, evaluation and control checks, comprehension records, method versions, metrics |

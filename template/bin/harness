@@ -1,0 +1,8 @@
+#!/bin/sh
+# The harness CLI of the framework pinned at harness/, with this audit's workspace as the default.
+self=$(readlink -f -- "$0" 2>/dev/null || printf '%s\n' "$0")
+root=$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd -P) || exit 1
+if [ ! -f "$root/harness/bin/harness" ]; then
+  git -C "$root" submodule update --init harness >&2 || { echo "harness: no framework at harness/" >&2; exit 1; }
+fi
+HARNESS_WORKSPACE=${HARNESS_WORKSPACE:-$root/workspace} exec "$root/harness/bin/harness" "$@"

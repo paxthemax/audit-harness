@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "harness": {
+      "command": "mise",
+      "args": ["exec", "--", "bin/harness", "mcp"]
+    }
+  }
+}

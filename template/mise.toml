@@ -1,0 +1,7 @@
+[tools]
+node = "25.2.0"
+foundry = "1.7.0"
+
+[env]
+HARNESS_WORKSPACE = "{{config_root}}/workspace"
+_.path = ["{{config_root}}/bin"]

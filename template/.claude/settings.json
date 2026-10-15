@@ -1,0 +1,21 @@
+{
+  "enabledMcpjsonServers": ["harness"],
+  "permissions": {
+    "allow": [
+      "Bash(bin/audit status:*)",
+      "Bash(bin/audit target list:*)",
+      "Bash(bin/harness status:*)",
+      "Bash(bin/harness records:*)",
+      "Bash(bin/harness show:*)"
+    ],
+    "deny": [
+      "Read(/workspace/secrets/**)",
+      "Edit(/workspace/**)",
+      "Write(/workspace/**)",
+      "Edit(/targets/**)",
+      "Write(/targets/**)",
+      "Edit(/harness/**)",
+      "Write(/harness/**)"
+    ]
+  }
+}

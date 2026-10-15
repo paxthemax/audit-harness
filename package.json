@@ -4,7 +4,7 @@
   "private": true,
   "description": "Walking-skeleton implementation of the human-led EVM audit harness (design: ../framework-design-lab)",
   "type": "module",
-  "bin": { "harness": "./bin/harness" },
+  "bin": { "harness": "./bin/harness", "audit": "./bin/audit" },
   "engines": { "node": ">=25" },
   "scripts": {
     "test": "node --test --test-concurrency=1 'test/**/*.test.ts'",
