@@ -28,6 +28,8 @@ bin/audit new ../audits/acme --link-framework        # development: harness/ lin
 
 `new` stages the scaffold in a fresh git repository and does not commit. A pinned framework commit must be pushed to the remote the submodule points at before anyone else can clone the audit. `--link-framework` uses this working tree as is, uncommitted changes included, and `bin/audit status` warns that the result cannot be reproduced from the pin.
 
+`bin/audit framework pin [<ref>]` moves the framework pin of an existing audit repository: it fetches, checks out the ref (by default the remote's default branch) and stages the new gitlink for you to commit after reading the framework's changelog for the range. It reports whether the move is a fast-forward, and refuses a linked framework or one with local changes. `bin/audit status` fails when `harness/` is not at the commit the audit repository pins.
+
 To work from a shared template instead, create one once with `bin/audit new`, commit and push it, then for each audit clone it with `--recurse-submodules` and point `origin` at the audit's own remote.
 
 ## Targets

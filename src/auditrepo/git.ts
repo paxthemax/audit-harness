@@ -5,7 +5,6 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import type { TargetEntry } from './manifest.ts';
 
 export class GitError extends Error {
   readonly args: string[];
@@ -84,9 +83,9 @@ export function checkoutState(dir: string): CheckoutState {
   return { present: true, head, changes, submodules_off };
 }
 
-/** The commit the audit repository's index records for a submodule target (its gitlink), or null. */
-export function gitlink(root: string, t: TargetEntry): string | null {
-  const line = gitTry(root, ['ls-files', '-s', '--', t.path])?.trim();
+/** The commit the audit repository's index records for a submodule at `path` (its gitlink), or null. */
+export function gitlink(root: string, path: string): string | null {
+  const line = gitTry(root, ['ls-files', '-s', '--', path])?.trim();
   const m = line ? /^160000 ([0-9a-f]+) /.exec(line) : null;
   return m ? m[1] : null;
 }

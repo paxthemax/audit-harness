@@ -31,6 +31,8 @@ import {
 /** The framework checkout this tool runs from. */
 export const FRAMEWORK_ROOT = resolve(import.meta.dirname, '../..');
 const TEMPLATE_DIR = join(FRAMEWORK_ROOT, 'template');
+/** Where an audit repository holds the framework (bin/ and .mcp.json there assume it). */
+const FRAMEWORK_DIR = 'harness';
 
 export interface Out {
   stdout(s: string): void;
@@ -116,7 +118,7 @@ function targetChecks(root: string, name: string, t: TargetEntry): Check[] {
   }
   const out: Check[] = [];
   if (t.mode === 'submodule') {
-    const link = gitlink(root, t);
+    const link = gitlink(root, t.path);
     if (link !== t.commit) out.push({ level: 'fail', subject, message: `${MANIFEST} pins ${short(t.commit)} but the audit repository records ${link ? short(link) : 'no gitlink'}`, fix: `bin/audit target pin ${name} ${t.commit}` });
   }
   if (st.head !== t.commit) {
@@ -237,6 +239,40 @@ async function cmdTarget(root: string, args: string[], out: Printer): Promise<nu
     return 0;
   }
   throw new UsageError('target add|pin|list');
+}
+
+// ------------------------------------------------------------------------------------------------
+// Framework pin
+
+async function cmdFramework(root: string, args: string[], out: Printer): Promise<number> {
+  const [sub, ...rest] = args;
+  if (sub !== 'pin' || rest.length > 1) throw new UsageError('framework pin [<ref>]  (default: the remote default branch, refetched)');
+  const dir = join(root, FRAMEWORK_DIR);
+  if (existsSync(dir) && lstatSync(dir).isSymbolicLink()) throw new UsageError(`harness/ links to a development checkout (${realpathSync(dir)}); there is no pin to move`);
+  const prior = gitlink(root, FRAMEWORK_DIR);
+  const st = checkoutState(dir);
+  if (!prior || !st.present) throw new UsageError('harness/ is not a submodule checkout of the audit repository (git submodule update --init harness)');
+  if (st.changes.some((l) => !l.startsWith('??'))) throw new UsageError('harness/ has local changes; the framework is consumed as is, so discard them or commit them upstream first');
+  git(dir, ['fetch', '-q', '--tags', 'origin']);
+  let ref = rest[0];
+  if (!ref) {
+    // The remote's default branch; refresh origin/HEAD in case the remote changed it.
+    gitTry(dir, ['remote', 'set-head', 'origin', '--auto']);
+    if (gitTry(dir, ['rev-parse', '--verify', '-q', 'refs/remotes/origin/HEAD']) === null) throw new UsageError('the framework remote names no default branch; give a ref: framework pin <ref>');
+    ref = 'HEAD';
+  }
+  const commit = resolveRef(dir, ref);
+  git(dir, ['checkout', '-q', '--detach', commit]);
+  git(root, ['add', '--', FRAMEWORK_DIR]);
+  const forward = prior === commit || gitTry(dir, ['merge-base', '--is-ancestor', prior, commit]) !== null;
+  const commits = forward && prior !== commit ? Number(git(dir, ['rev-list', '--count', `${prior}..${commit}`]).trim()) : null;
+  out.result({ ok: true, prior, commit, forward, commits }, [
+    prior === commit
+      ? `Framework stays at ${short(commit)}.`
+      : `Framework moved ${short(prior)} -> ${short(commit)}${commits !== null ? ` (${commits} commit(s) ahead)` : ' (not a fast-forward: back or sideways)'}; staged, not committed.`,
+    ...(prior === commit ? [] : [`Review the framework's CHANGELOG.md for the range, run bin/audit status, then: git commit -m "Move the framework pin to ${short(commit)}"`]),
+  ]);
+  return 0;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -383,14 +419,23 @@ async function statusChecks(root: string): Promise<Check[]> {
   const forge = toolCheck('forge', ['--version'], 'forge', 'builds and tests need Foundry with cached compilers');
   checks.push(forge.level === 'fail' ? { ...forge, level: 'warn' } : forge);
 
-  const fw = gitTry(FRAMEWORK_ROOT, ['rev-parse', 'HEAD'])?.trim();
-  const fwDirty = (gitTry(FRAMEWORK_ROOT, ['status', '--porcelain=v1', '--untracked-files=no']) ?? '').split('\n').filter(Boolean).length;
-  const linked = existsSync(join(root, 'harness')) && lstatSync(join(root, 'harness')).isSymbolicLink();
+  // The audit repository's own framework (harness/), whichever framework this tool runs from.
+  const fwDir = join(root, FRAMEWORK_DIR);
+  const linked = existsSync(fwDir) && lstatSync(fwDir).isSymbolicLink();
+  const fw = gitTry(fwDir, ['rev-parse', 'HEAD'])?.trim();
+  const fwDirty = (gitTry(fwDir, ['status', '--porcelain=v1', '--untracked-files=no']) ?? '').split('\n').filter(Boolean).length;
   checks.push({
     level: fwDirty ? 'warn' : 'ok',
     subject: 'framework',
-    message: `${linked ? `harness/ -> ${FRAMEWORK_ROOT} (linked development checkout)` : relative(root, FRAMEWORK_ROOT) || FRAMEWORK_ROOT} at ${fw ? short(fw) : 'unknown commit'}${fwDirty ? `, ${fwDirty} uncommitted change(s): results are not reproducible from the pin` : ''}`,
+    message: `harness/${linked ? ` -> ${realpathSync(fwDir)} (linked development checkout)` : ''} at ${fw ? short(fw) : 'unknown commit'}${fwDirty ? `, ${fwDirty} uncommitted change(s): results are not reproducible from the pin` : ''}`,
   });
+  if (existsSync(fwDir) && realpathSync(fwDir) !== realpathSync(FRAMEWORK_ROOT)) {
+    checks.push({ level: 'warn', subject: 'framework', message: `this tool runs from ${FRAMEWORK_ROOT}, not from harness/; use bin/audit` });
+  }
+  const fwLink = linked ? null : gitlink(root, FRAMEWORK_DIR);
+  if (fwLink && fw && fwLink !== fw) {
+    checks.push({ level: 'fail', subject: 'framework', message: `harness/ is at ${short(fw)} but the audit repository pins ${short(fwLink)}`, fix: `git submodule update ${FRAMEWORK_DIR}  (or move the pin: bin/audit framework pin ${short(fw)})` });
+  }
 
   const wsReady = existsSync(join(root, WORKSPACE, 'harness.json'));
   checks.push(wsReady ? { level: 'ok', subject: 'workspace', message: `${WORKSPACE}/` } : { level: 'fail', subject: 'workspace', message: 'not initialized', fix: 'bin/audit setup' });
@@ -481,18 +526,18 @@ function cmdNew(args: string[], out: Printer): number {
   if (values['link-framework']) {
     // Development mode: the audit uses this framework checkout, uncommitted changes included.
     const src = realpathSync(values.framework ?? FRAMEWORK_ROOT);
-    symlinkSync(src, join(root, 'harness'));
+    symlinkSync(src, join(root, FRAMEWORK_DIR));
     appendFileSync(join(root, '.git', 'info', 'exclude'), '/harness\n');
     framework = { mode: 'link', source: src, commit: gitTry(src, ['rev-parse', 'HEAD'])?.trim() ?? null };
     notes.push(`harness/ links to ${src} and is not committed: this audit is not reproducible from the repository alone.`);
   } else {
     const source = values.framework ?? (gitTry(FRAMEWORK_ROOT, ['remote', 'get-url', 'origin'])?.trim() || FRAMEWORK_ROOT);
-    git(root, ['submodule', 'add', '-q', '--name', 'harness', '--', source, 'harness']);
-    const fwDir = join(root, 'harness');
+    git(root, ['submodule', 'add', '-q', '--name', FRAMEWORK_DIR, '--', source, FRAMEWORK_DIR]);
+    const fwDir = join(root, FRAMEWORK_DIR);
     const ref = values['framework-ref'] ?? (values.framework ? 'HEAD' : git(FRAMEWORK_ROOT, ['rev-parse', 'HEAD']).trim());
     const commit = resolveRef(fwDir, ref);
     git(fwDir, ['checkout', '-q', '--detach', commit]);
-    git(root, ['add', '--', 'harness']);
+    git(root, ['add', '--', FRAMEWORK_DIR]);
     framework = { mode: 'submodule', source, commit };
     if (!values.framework && (gitTry(FRAMEWORK_ROOT, ['status', '--porcelain=v1', '--untracked-files=no']) ?? '').trim()) {
       notes.push(`this framework checkout has uncommitted changes; the audit pins its last commit ${short(commit)}, which does not contain them.`);
@@ -552,6 +597,7 @@ Global: --repo DIR (or AUDIT_ROOT; default: the nearest directory with audit.jso
                          register a snapshot of each engagement's root at the current pin
   status                 read-only checks with a fix for each failure; exit 1 when not ready
   hook [-e ID]           Claude Code settings that record typed prompts as captured input
+  framework pin [<ref>]  move the harness/ submodule pin (default: the remote default branch); staged, not committed
 
 Exit codes: 0 ok; 1 a step or check failed; 2 usage error.
 `;
@@ -588,6 +634,8 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
         return await cmdStatus(root, out);
       case 'hook':
         return cmdHook(root, rest, out);
+      case 'framework':
+        return await cmdFramework(root, rest, out);
       default:
         throw new UsageError(`unknown command ${cmd}`);
     }

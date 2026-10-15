@@ -66,6 +66,7 @@ test('audit repository: new, targets in each mode, setup, pin moves and snapshot
     assert.ok(lstatSync(join(root, 'harness')).isSymbolicLink());
     for (const f of ['AGENTS.md', 'CLAUDE.md', '.mcp.json', '.claude/settings.json', 'bin/audit', 'bin/harness', 'mise.toml', 'audit.json']) assert.ok(existsSync(join(root, f)), f);
     assert.equal(sh(root, 'status', '--porcelain', '--', 'harness'), '', 'a linked framework is not committed');
+    assert.equal((await audit(root, 'framework', 'pin')).code, 2, 'a linked framework has no pin to move');
 
     // Submodule target pinned to a tag; its own submodules come along.
     const added = await audit(root, 'target', 'add', 'vault', url, '--ref', 'v1');
@@ -177,6 +178,31 @@ test('audit new pins the framework as a submodule at the requested commit', asyn
     assert.match(sh(root, 'ls-files', '-s', 'harness'), new RegExp(`^160000 ${first} `));
     assert.match(readFileSync(join(root, '.gitmodules'), 'utf8'), /path = harness/);
     assert.equal((await audit(null, 'new', root)).code, 2, 'refuses a non-empty directory');
+    sh(root, 'commit', '-q', '-m', 'audit');
+
+    // framework pin: forward to the remote default branch, staged; then back to a named commit.
+    const second = sh(fw, 'rev-parse', 'HEAD');
+    const fwd = await audit(root, 'framework', 'pin');
+    assert.equal(fwd.code, 0, JSON.stringify(fwd));
+    assert.deepEqual([fwd.json.prior, fwd.json.commit, fwd.json.forward, fwd.json.commits], [first, second, true, 1]);
+    assert.match(sh(root, 'diff', '--cached', '--raw', '--', 'harness'), new RegExp(`${second.slice(0, 7)}`), 'the new gitlink is staged');
+    const back = await audit(root, 'framework', 'pin', first);
+    assert.deepEqual([back.json.commit, back.json.forward], [first, false]);
+    assert.equal((await audit(root, 'framework', 'pin', first)).json.commits, null, 'staying put reports no range');
+
+    // A checkout that drifts from the committed gitlink fails status; local changes block a move.
+    sh(root, 'reset', '-q', '--', 'harness');
+    sh(join(root, 'harness'), 'checkout', '-q', '--detach', first);
+    const fwChecks = async () => (await audit(root, 'status')).json.checks.filter((c: { subject: string }) => c.subject === 'framework');
+    const aligned = await fwChecks();
+    assert.equal(aligned[0].message, `harness/ at ${first.slice(0, 12)}`);
+    assert.ok(!aligned.some((c: { level: string }) => c.level === 'fail'), JSON.stringify(aligned));
+    assert.ok(aligned.some((c: { level: string; message: string }) => c.level === 'warn' && /not from harness/.test(c.message)), 'the test runs this checkout, not harness/');
+    sh(join(root, 'harness'), 'checkout', '-q', '--detach', second);
+    const drift = await fwChecks();
+    assert.ok(drift.some((c: { level: string; message: string }) => c.level === 'fail' && c.message === `harness/ is at ${second.slice(0, 12)} but the audit repository pins ${first.slice(0, 12)}`), JSON.stringify(drift));
+    writeFileSync(join(root, 'harness/README.md'), 'local edit\n');
+    assert.equal((await audit(root, 'framework', 'pin')).code, 2);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
