@@ -436,14 +436,30 @@ function cmdHook(root: string, args: string[], out: Printer): number {
   const ids = Object.keys(m.engagements);
   const id = values.engagement ?? (ids.length === 1 ? ids[0] : undefined);
   if (!id || !m.engagements[id]) throw new UsageError(`hook -e <engagement>  (one of: ${ids.join(', ') || 'none yet'})`);
-  const command = `${join(realpathSync(FRAMEWORK_ROOT), 'bin', 'harness')} capture-hook --workspace ${join(root, WORKSPACE)} --engagement ${id}`;
-  const settings = { hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command, timeout: 30 }] }] } };
+  const settings = { hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: hookCommand(root, id), timeout: 30 }] }] } };
   out.result({ ok: true, engagement: id, settings }, [
-    '# Records every prompt you type in Claude Code verbatim as captured input for this engagement.',
+    '# Records every prompt you type in a Claude Code session started in this repository (or below it) verbatim as',
+    '# captured input for this engagement; sessions started anywhere else record nothing.',
     '# Merge into ~/.claude/settings.json (user settings): an agent working in this repository can edit .claude/ here.',
     JSON.stringify(settings, null, 2),
   ]);
   return 0;
+}
+
+/**
+ * The capture hook's shell command. User settings apply to every Claude Code session, so the command records only when
+ * the session's project directory (CLAUDE_PROJECT_DIR) is the audit repository or below it, and otherwise exits 0
+ * without reading the prompt. It runs the pinned framework through mise from the repository, so the hook gets the
+ * repository's Node whatever PATH Claude Code started with.
+ */
+export function hookCommand(root: string, engagement: string): string {
+  const r = shellWord(root);
+  return `case "$CLAUDE_PROJECT_DIR" in ${r}|${r}/*) cd ${r} && exec mise exec -- harness/bin/harness capture-hook --workspace ${shellWord(join(root, WORKSPACE))} --engagement ${engagement};; esac`;
+}
+
+/** A path as one shell word: as is when it holds only safe characters, single-quoted otherwise. */
+function shellWord(s: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 // ------------------------------------------------------------------------------------------------

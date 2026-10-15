@@ -25,7 +25,7 @@ Requirements: Linux with `bwrap`, Git, Foundry with the needed compilers in the 
 
 ## Working
 
-Start Claude Code or omp here. `.mcp.json` runs the harness MCP server against `workspace/`; ask the agent what needs deciding. `AGENTS.md` holds the rules agents follow in this repository. To record your typed prompts as captured input, merge the output of `bin/audit hook -e <engagement>` into your user settings.
+Start Claude Code or omp here. `.mcp.json` runs the harness MCP server against `workspace/`; ask the agent what needs deciding. `AGENTS.md` holds the rules agents follow in this repository. To record your typed prompts as captured input, merge the output of `bin/audit hook -e <engagement>` into your user settings; it records only sessions started in this repository.
 
 The harness CLI is `bin/harness` (`harness` on PATH under mise). See `harness/docs/cli.md` for the workflow and `harness/docs/audit-repo.md` for targets, pins and snapshots.
 

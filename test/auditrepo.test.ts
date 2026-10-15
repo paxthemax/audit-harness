@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FRAMEWORK_ROOT, main } from '../src/auditrepo/main.ts';
+import { FRAMEWORK_ROOT, hookCommand, main } from '../src/auditrepo/main.ts';
+import { main as harnessMain } from '../src/cli/main.ts';
 import { readManifest, validateManifest } from '../src/auditrepo/manifest.ts';
 
 // Local fixture remotes: allow file:// submodules and give commits an identity, for this process only.
@@ -189,4 +190,44 @@ test('audit.json validation names the offending field', () => {
   assert.throws(() => validateManifest({ ...base, targets: { t: { ...base.targets.t, commit: 'abc' } } }), /full commit/);
   assert.throws(() => validateManifest({ ...base, engagements: { e1: { target: 'zz', name: 'n', owner: 'o', purpose: 'p' } } }), /unknown target/);
   assert.throws(() => validateManifest({ ...base, engagements: { library: { target: 't', name: 'n', owner: 'o', purpose: 'p' } } }), /engagement id/);
+});
+
+test('audit hook records only sessions started in the audit repository', async () => {
+  const dir = tmp();
+  try {
+    const root = join(dir, "it's an audit");
+    assert.equal((await audit(null, 'new', root, '--link-framework')).code, 0);
+    const harnessCli = async (...argv: string[]) => {
+      let stdout = '';
+      const code = await harnessMain([...argv, '--json'], { HARNESS_WORKSPACE: join(root, 'workspace') }, { stdout: (s) => void (stdout += s), stderr: () => {} });
+      return { code, json: JSON.parse(stdout) };
+    };
+    assert.equal((await harnessCli('init')).code, 0);
+    assert.equal((await harnessCli('engagement', 'create', 'eng-hook', '--name', 'n', '--owner', 'o', '--purpose', 'p')).code, 0);
+    const captured = async () => (await harnessCli('records', '-e', 'eng-hook', '--type', 'captured_input')).json.records.length;
+
+    const command = hookCommand(root, 'eng-hook');
+    assert.match(command, /^case "\$CLAUDE_PROJECT_DIR" in '/, 'a path with a quote is one shell word');
+    const fire = (projectDir: string, promptId: string) =>
+      spawnSync('sh', ['-c', command], {
+        input: JSON.stringify({ session_id: 's', prompt_id: promptId, hook_event_name: 'UserPromptSubmit', cwd: projectDir, transcript_path: '/dev/null', prompt: 'verbatim words' }),
+        env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir, MISE_TRUSTED_CONFIG_PATHS: root },
+        encoding: 'utf8',
+      });
+
+    for (const elsewhere of [dir, `${root}-sibling`, root.slice(0, -1)]) {
+      const r = fire(elsewhere, `p-${elsewhere.length}`);
+      assert.equal(r.status, 0);
+      assert.equal(r.stdout, '');
+    }
+    assert.equal(await captured(), 0, 'sessions outside the repository record nothing');
+
+    if (spawnSync('mise', ['--version']).status !== 0) return; // the recording path runs through mise
+    const r = fire(join(root, 'work'), 'p-in');
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, '', 'a UserPromptSubmit hook adds its stdout to the model context');
+    assert.equal(await captured(), 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

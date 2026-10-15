@@ -154,6 +154,7 @@ Packaging defaults of `bin/audit` ([audit-repo.md](audit-repo.md)); none changes
 | Moving checkouts | `setup` moves submodule and clone targets to their pins unless they have tracked local changes; it never clones or moves a path target | `ensureTarget` |
 | Snapshots | `setup` registers only an engagement's first snapshot; later ones only on `snapshot`. A root that is off its pin, has uncommitted changes or nested submodules off their pins is refused unless `--allow-dirty` | `cmdSetup`, `register` |
 | Agent guard rails | `.claude/settings.json` denies edits to `targets/`, `harness/`, `workspace/` and reads of `workspace/secrets/`; the capture hook is printed for user settings, not installed in the repository | `template/` |
+| Capture hook scope | Records only sessions whose `CLAUDE_PROJECT_DIR` is the audit repository or below it; every other session records nothing | `hookCommand` |
 
 ## Defaults of the yolo governor
 
